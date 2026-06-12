@@ -168,7 +168,7 @@ async function handleApi(req, res) {
 
   if (req.method === 'POST') {
     const body = await readBody(req);
-    const record = Object.assign({ id: nextId(data[resource]) }, body);
+    const record = Object.assign({}, body, { id: nextId(data[resource]) });
     data[resource].unshift(record);
     writeData(data);
     send(res, 201, record);

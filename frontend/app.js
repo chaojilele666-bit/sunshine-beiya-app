@@ -73,6 +73,14 @@ function normalizeServiceModules(modules) {
   }));
 }
 
+function showBackendSyncFailedToast() {
+  wx.showToast({
+    title: '已保存到本地，后台同步失败，请确认后台是否启动',
+    icon: 'none',
+    duration: 3000
+  });
+}
+
 App({
   globalData: {
     city: '北京',
@@ -155,7 +163,7 @@ App({
       createdAt: new Date().toLocaleString()
     }, appointment);
     this.globalData.appointments = [record, ...this.globalData.appointments];
-    this.requestBackend('appointments', 'POST', record).catch(() => {});
+    this.requestBackend('appointments', 'POST', record).catch(showBackendSyncFailedToast);
   },
 
   addDemand(demand) {
@@ -169,7 +177,7 @@ App({
       source: '小程序',
       consultant: '',
       followNote: ''
-    }, record)).catch(() => {});
+    }, record)).catch(showBackendSyncFailedToast);
   },
 
   saveAyiProfile(profile) {
@@ -182,7 +190,7 @@ App({
       idCardImage: '',
       healthCertImage: '',
       skillCertImage: ''
-    }, this.globalData.ayiProfile)).catch(() => {});
+    }, this.globalData.ayiProfile)).catch(showBackendSyncFailedToast);
   },
 
   addApplication(application) {
@@ -192,6 +200,6 @@ App({
       createdAt: new Date().toLocaleString()
     }, application);
     this.globalData.applications = [record, ...this.globalData.applications];
-    this.requestBackend('applications', 'POST', record).catch(() => {});
+    this.requestBackend('applications', 'POST', record).catch(showBackendSyncFailedToast);
   }
 });
