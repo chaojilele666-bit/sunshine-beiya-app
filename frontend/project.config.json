@@ -31,7 +31,7 @@
     }
   },
   "compileType": "miniprogram",
-  "libVersion": "3.8.8",
+  "libVersion": "3.16.0",
   "appid": "wx99884da95f54ba23",
   "projectname": "beijing-yangguang-beiya-housekeeping",
   "condition": {},
