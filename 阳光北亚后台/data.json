@@ -1,0 +1,255 @@
+{
+  "accounts": [
+    {
+      "id": 1,
+      "name": "客户入口",
+      "phone": "",
+      "role": "客户端",
+      "entry": "微信小程序",
+      "permissions": [
+        "发布需求",
+        "预约阿姨",
+        "查看我的需求",
+        "联系客服"
+      ],
+      "status": "启用",
+      "note": "客户通过微信授权登录，小程序内使用。"
+    },
+    {
+      "id": 2,
+      "name": "阿姨入口",
+      "phone": "",
+      "role": "阿姨端",
+      "entry": "微信小程序",
+      "permissions": [
+        "完善资料",
+        "上传证件",
+        "查看工作",
+        "申请接单"
+      ],
+      "status": "启用",
+      "note": "阿姨通过微信授权登录，小程序内使用。"
+    },
+    {
+      "id": 3,
+      "name": "运营账号",
+      "phone": "18611607087",
+      "role": "运营端",
+      "entry": "后台管理",
+      "permissions": [
+        "管理阿姨",
+        "跟进客户需求",
+        "安排面试",
+        "处理接单申请",
+        "维护门店和内容"
+      ],
+      "status": "启用",
+      "note": "日常工作人员使用，不看老板级汇总。"
+    },
+    {
+      "id": 4,
+      "name": "老板账号",
+      "phone": "",
+      "role": "老板端",
+      "entry": "后台管理",
+      "permissions": [
+        "查看全部数据",
+        "查看订单",
+        "查看经营情况",
+        "管理运营账号"
+      ],
+      "status": "启用",
+      "note": "老板查看全局数据和关键业务。"
+    }
+  ],
+  "ayis": [
+    {
+      "id": 2,
+      "image": "",
+      "name": "1",
+      "phone": "1",
+      "source": "小程序",
+      "age": 1,
+      "hometown": "1",
+      "serviceType": "育儿嫂",
+      "experience": 1,
+      "liveType": "住家",
+      "salary": "1",
+      "availableTime": "1",
+      "skills": [
+        "1"
+      ],
+      "status": "待审核",
+      "idCardImage": "",
+      "healthCertImage": "",
+      "skillCertImage": "",
+      "intro": ""
+    },
+    {
+      "id": 1,
+      "image": "",
+      "name": "王阿姨",
+      "phone": "18611607087",
+      "source": "后台录入",
+      "age": 42,
+      "hometown": "河北保定",
+      "serviceType": "育儿嫂",
+      "experience": 8,
+      "liveType": "住家",
+      "salary": "9000-12000/月",
+      "availableTime": "下周可上户",
+      "skills": [
+        "辅食",
+        "早教",
+        "睡眠引导"
+      ],
+      "status": "已认证",
+      "idCardImage": "",
+      "healthCertImage": "",
+      "skillCertImage": "",
+      "intro": "性格耐心，擅长 0-3 岁宝宝照护。"
+    }
+  ],
+  "demands": [
+    {
+      "id": 101,
+      "customerName": "赵女士",
+      "phone": "13800000000",
+      "source": "小程序",
+      "serviceType": "育儿嫂",
+      "city": "北京",
+      "address": "朝阳区望京附近",
+      "startTime": "下周可面试",
+      "budget": "9000-12000/月",
+      "familyInfo": "宝宝 10 个月，需要白天照护、辅食和早教陪伴。",
+      "consultant": "杨顾问",
+      "followNote": "已电话沟通，客户希望优先看住家育儿嫂。",
+      "status": "待跟进"
+    },
+    {
+      "id": 102,
+      "customerName": "李先生",
+      "phone": "13900000000",
+      "source": "电话",
+      "serviceType": "住家保姆",
+      "city": "北京",
+      "address": "海淀区中关村附近",
+      "startTime": "本月内",
+      "budget": "7500-9500/月",
+      "familyInfo": "三口之家，主要负责三餐、卫生和衣物整理。",
+      "consultant": "王顾问",
+      "followNote": "客户偏好北方阿姨，会做家常菜。",
+      "status": "待匹配"
+    }
+  ],
+  "appointments": [
+    {
+      "id": 201,
+      "customerName": "赵女士",
+      "phone": "13800000000",
+      "ayiName": "王阿姨",
+      "serviceType": "育儿嫂",
+      "date": "本周六 10:00",
+      "address": "朝阳区望京附近",
+      "consultant": "杨顾问",
+      "status": "待联系",
+      "note": "客户想先线上沟通，再约线下面试。"
+    }
+  ],
+  "applications": [
+    {
+      "id": 301,
+      "ayiName": "王阿姨",
+      "ayiPhone": "18611607087",
+      "demandId": 101,
+      "serviceType": "育儿嫂",
+      "customerAddress": "北京 朝阳区望京附近",
+      "startTime": "下周可面试",
+      "budget": "9000-12000/月",
+      "consultant": "杨顾问",
+      "status": "已申请",
+      "note": "阿姨时间合适，可推荐给客户。"
+    }
+  ],
+  "orders": [
+    {
+      "id": 401,
+      "orderNo": "YG20260611001",
+      "customerName": "示例客户",
+      "customerPhone": "13800000000",
+      "ayiName": "王阿姨",
+      "ayiPhone": "18611607087",
+      "serviceType": "育儿嫂",
+      "address": "朝阳区望京附近",
+      "startTime": "下周一",
+      "price": "10000/月",
+      "consultant": "杨顾问",
+      "contractStatus": "未签约",
+      "payStatus": "未付款",
+      "status": "待上户",
+      "note": "示例订单，后续可接合同和付款状态。"
+    }
+  ],
+  "stores": [
+    {
+      "id": 1,
+      "image": "",
+      "name": "东城安定门服务点",
+      "district": "东城区",
+      "address": "北京市东城区安定门外东河沿乙六号楼三层",
+      "phone": "18611607087",
+      "area": "东城、西城、朝阳",
+      "tags": [
+        "家政",
+        "母婴养老"
+      ],
+      "canStay": true,
+      "visible": true
+    }
+  ],
+  "serviceModules": [
+    {
+      "id": 1,
+      "title": "服务范围",
+      "summary": "家政、母婴、养老、保洁、小时工",
+      "image": "",
+      "sort": 1,
+      "visible": true
+    },
+    {
+      "id": 2,
+      "title": "重点区域",
+      "summary": "东城、朝阳、海淀、丰台、通州",
+      "image": "",
+      "sort": 2,
+      "visible": true
+    },
+    {
+      "id": 3,
+      "title": "推荐机制",
+      "summary": "顾问根据地址、预算、家庭情况匹配阿姨",
+      "image": "",
+      "sort": 3,
+      "visible": true
+    }
+  ],
+  "banners": [
+    {
+      "id": 501,
+      "title": "北京阳光北亚家政",
+      "subtitle": "找阿姨、找工作、门店咨询一站式管理",
+      "image": "",
+      "targetType": "找阿姨",
+      "sort": 1,
+      "visible": true
+    }
+  ],
+  "analytics": {
+    "today": {
+      "customerClicks": 38,
+      "ayiClicks": 21,
+      "customerLeads": 2,
+      "ayiLeads": 2
+    }
+  }
+}

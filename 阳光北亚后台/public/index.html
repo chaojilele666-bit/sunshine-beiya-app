@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>北京阳光北亚家政后台</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <section id="loginView" class="login-view">
+      <div class="login-card">
+        <div class="login-brand">北京阳光北亚家政</div>
+        <h1>选择进入身份</h1>
+        <p>客户和阿姨进入微信小程序；运营和老板进入后台管理。</p>
+        <div id="loginOptions" class="login-options"></div>
+        <div id="loginTip" class="login-tip"></div>
+      </div>
+    </section>
+
+    <header class="topbar app-shell">
+      <div>
+        <h1>北京阳光北亚家政后台</h1>
+        <p>一期覆盖小程序完整流程：客户需求、预约、阿姨资料、接单、订单、门店和首页展示。</p>
+      </div>
+      <div id="currentUser" class="current-user"></div>
+      <button id="refreshBtn">刷新数据</button>
+      <button id="logoutBtn" class="secondary top-logout">退出</button>
+      <a class="api-link" href="/api/miniprogram" target="_blank">小程序接口预览</a>
+    </header>
+
+    <main class="layout app-shell">
+      <nav class="tabs">
+        <button class="tab active" data-resource="dashboard">经营看板</button>
+        <button class="tab" data-resource="accounts">账号权限</button>
+        <button class="tab" data-resource="ayis">阿姨管理</button>
+        <button class="tab" data-resource="demands">客户需求</button>
+        <button class="tab" data-resource="appointments">预约面试</button>
+        <button class="tab" data-resource="applications">接单申请</button>
+        <button class="tab" data-resource="orders">订单跟进</button>
+        <button class="tab" data-resource="stores">门店信息</button>
+        <button class="tab" data-resource="serviceModules">公司服务</button>
+        <button class="tab" data-resource="banners">首页轮播</button>
+      </nav>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2 id="sectionTitle">阿姨管理</h2>
+            <p id="sectionDesc">维护阿姨资料、服务类型、薪资和审核状态。</p>
+          </div>
+          <button id="addBtn">新增</button>
+        </div>
+
+        <div id="list" class="list"></div>
+      </section>
+
+      <aside class="editor">
+        <h2 id="formTitle">新增/编辑</h2>
+        <form id="form"></form>
+      </aside>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
