@@ -1,0 +1,39 @@
+.form {
+  padding: 4rpx 24rpx;
+}
+
+.field {
+  padding: 24rpx 0;
+  border-bottom: 1rpx solid #edf0f2;
+}
+
+.field:last-child {
+  border-bottom: 0;
+}
+
+.label {
+  margin-bottom: 12rpx;
+  color: #35424d;
+  font-weight: 700;
+}
+
+.picker-value,
+input {
+  min-height: 56rpx;
+  line-height: 56rpx;
+  color: #1f2933;
+}
+
+.picker-value {
+  color: #1f8a70;
+}
+
+textarea {
+  width: 100%;
+  min-height: 140rpx;
+  color: #1f2933;
+}
+
+.submit {
+  margin-top: 34rpx;
+}

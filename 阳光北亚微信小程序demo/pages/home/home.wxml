@@ -1,0 +1,177 @@
+<view class="page">
+  <view wx:if="{{noRole}}" class="role-page">
+    <view class="brand-card card">
+      <view class="logo">阳光</view>
+      <view class="brand-name">北京阳光北亚家政</view>
+      <view class="brand-desc">请选择你的身份，进入对应的服务页面。</view>
+    </view>
+
+    <button class="role-button customer" bindtap="chooseCustomer">我是客户</button>
+    <view class="role-note">发布需求、找阿姨、预约面试、查看进度</view>
+
+    <button class="role-button ayi" bindtap="chooseAyi">我是阿姨</button>
+    <view class="role-note">完善资料、上传证件健康证、查看需求、申请接单</view>
+  </view>
+
+  <view wx:if="{{isCustomer}}" class="customer-page">
+    <view class="identity-bar card">
+      <text>当前身份：客户</text>
+      <text class="identity-switch" bindtap="switchRole">切换身份</text>
+    </view>
+    <view class="hero">
+      <view class="hero-top">
+        <view>
+          <view class="city">{{city}}</view>
+          <view class="customer-title">北京阳光北亚家政</view>
+          <view class="hero-title">找靠谱阿姨，先看档案再预约</view>
+        </view>
+        <view class="hero-mark">家政</view>
+      </view>
+      <view class="hero-copy">保姆、月嫂、育儿嫂、小时工，一站式匹配。</view>
+      <view class="hero-actions">
+        <button class="primary-button hero-button" bindtap="goDemand">发布需求</button>
+        <button class="ghost-button hero-button" bindtap="goList">找阿姨</button>
+      </view>
+    </view>
+
+    <view class="quick-grid">
+      <view class="quick-item card" bindtap="goDemand">
+        <view class="quick-title">发布需求</view>
+        <view class="quick-desc">顾问帮你匹配</view>
+      </view>
+      <view class="quick-item card" bindtap="callService">
+        <view class="quick-title">客服咨询</view>
+        <view class="quick-desc">电话沟通需求</view>
+      </view>
+      <view class="quick-item card" bindtap="goAbout">
+        <view class="quick-title">公司介绍</view>
+        <view class="quick-desc">流程与保障</view>
+      </view>
+    </view>
+
+    <view class="section">
+      <view class="section-title">公司服务</view>
+      <view class="stat-grid">
+        <view wx:for="{{stats}}" wx:key="label" class="stat-card card" bindtap="goAbout">
+          <view class="stat-value">{{item.value}}</view>
+          <view class="muted">{{item.label}}</view>
+        </view>
+      </view>
+    </view>
+
+    <view class="section">
+      <view class="section-title">服务类型</view>
+      <view class="service-grid">
+        <view wx:for="{{services}}" wx:key="name" class="service-card card" bindtap="goList" data-type="{{item.type}}">
+          <view class="service-name">{{item.name}}</view>
+          <view class="service-desc">{{item.desc}}</view>
+        </view>
+      </view>
+    </view>
+
+    <view class="section">
+      <view class="section-title">
+        <text>今日推荐阿姨</text>
+        <text class="more" bindtap="goList">查看更多</text>
+      </view>
+      <view wx:for="{{recommended}}" wx:key="id" class="ayi-card card" bindtap="goDetail" data-id="{{item.id}}">
+        <view class="ayi-avatar" style="background: {{item.avatarColor}};">{{item.avatarText}}</view>
+        <view class="ayi-info">
+          <view class="ayi-head">
+            <text class="ayi-name">{{item.name}}</text>
+            <text class="ayi-role">{{item.role}}</text>
+          </view>
+          <view class="muted">{{item.experience}} 年经验 · {{item.hometown}}</view>
+          <view class="tag-line">
+            <text wx:for="{{item.skills}}" wx:key="*this" class="tag">{{item}}</text>
+          </view>
+          <view class="ayi-bottom">
+            <text class="price">¥{{item.salary}}</text>
+            <text class="muted">{{item.schedule}}</text>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <view class="section">
+      <view class="section-title">服务流程</view>
+      <view class="process card">
+        <view wx:for="{{process}}" wx:key="step" class="process-item">
+          <view class="process-no">{{item.step}}</view>
+          <view>
+            <view class="process-title">{{item.title}}</view>
+            <view class="muted">{{item.desc}}</view>
+          </view>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <view wx:if="{{isAyi}}" class="ayi-page">
+    <view class="ayi-topbar">
+      <view>
+        <view class="ayi-page-title">阿姨接单</view>
+        <view class="muted">北京 · 今日可申请工作</view>
+      </view>
+      <text class="identity-switch" bindtap="switchRole">切换身份</text>
+    </view>
+
+    <view class="ayi-grid compact-grid top-tools">
+      <view class="tool card" bindtap="goProfile">
+        <view class="tool-title">个人资料</view>
+        <view class="muted">经验、薪资、服务类型</view>
+      </view>
+      <view class="tool card" bindtap="goApplications">
+        <view class="tool-title">我的接单</view>
+        <view class="muted">{{applications.length}} 条申请</view>
+      </view>
+    </view>
+
+    <view class="ayi-action-strip card">
+      <view class="verify-copy">
+        <view class="verify-title">完善资料，优先推荐</view>
+        <view class="muted">{{profileText}}</view>
+      </view>
+      <view class="strip-buttons">
+        <button class="mini-button" bindtap="goProfile">资料</button>
+        <button class="mini-button outline" bindtap="goCerts">证件</button>
+      </view>
+    </view>
+
+    <view class="ayi-mini-tabs">
+      <view class="mini-tab active" bindtap="goHall">工作</view>
+      <view class="mini-tab" bindtap="goApplications">我的接单 {{applications.length}}</view>
+      <view class="mini-tab" bindtap="goCerts">实名认证</view>
+    </view>
+
+    <view class="section priority-section">
+      <view class="section-title">
+        <text>今日推荐工作</text>
+        <text class="more" bindtap="goHall">查看更多</text>
+      </view>
+      <view wx:for="{{todayJobs}}" wx:key="id" class="job-card card" bindtap="goHall" data-type="{{item.serviceType}}">
+        <view class="job-top">
+          <view>
+            <view class="job-title">{{item.serviceType}}</view>
+            <view class="muted">订单号：YG{{item.id}}</view>
+          </view>
+          <view class="job-budget">{{item.budget}}</view>
+        </view>
+        <view class="job-meta">
+          <text>服务地址</text>
+          <text>{{item.city}} {{item.address}}</text>
+        </view>
+        <view class="job-meta">
+          <text>上户时间</text>
+          <text>{{item.startTime}}</text>
+        </view>
+        <view class="job-line">用人要求：{{item.familyInfo}}</view>
+        <view class="job-card-footer">
+          <text class="update-time">刚刚更新</text>
+          <button class="apply-mini" catchtap="goHall" data-type="{{item.serviceType}}">看一看</button>
+        </view>
+      </view>
+    </view>
+
+  </view>
+</view>

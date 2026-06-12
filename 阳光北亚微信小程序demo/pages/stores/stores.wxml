@@ -1,0 +1,62 @@
+<view class="page stores-page">
+  <view class="search-row">
+    <view class="city">{{city}}</view>
+    <view class="search-box">
+      <text class="search-icon">⌕</text>
+      <input placeholder="搜索门店/小区/大厦名称" value="{{query}}" bindinput="updateQuery" />
+    </view>
+  </view>
+
+  <view class="district-grid">
+    <view
+      wx:for="{{districts}}"
+      wx:key="name"
+      class="district {{item.activeClass}}"
+      bindtap="chooseDistrict"
+      data-district="{{item.name}}"
+    >
+      {{item.name}}
+    </view>
+  </view>
+
+  <view class="filter-row">
+    <view class="stay-check {{stayClass}}" bindtap="toggleStay">
+      <view class="box">{{stayMark}}</view>
+      <text>可住宿</text>
+    </view>
+  </view>
+
+  <view wx:if="{{emptyText}}" class="empty card">
+    <view class="empty-icon">⌛</view>
+    <view class="empty-text">{{emptyText}}</view>
+  </view>
+
+  <view
+    wx:for="{{visibleStores}}"
+    wx:key="id"
+    class="store-card card"
+    bindtap="showStore"
+    data-name="{{item.name}}"
+    data-address="{{item.address}}"
+    data-area="{{item.area}}"
+  >
+    <view class="store-image" style="background: {{item.color}};">阳光</view>
+    <view class="store-main">
+      <view class="store-name">{{item.name}}</view>
+      <view class="muted">{{item.address}}</view>
+      <view class="muted">覆盖：{{item.area}}</view>
+      <view class="tag-row">
+        <text wx:for="{{item.tags}}" wx:key="*this" class="store-tag">{{item}}</text>
+      </view>
+    </view>
+    <view class="store-actions">
+      <button
+        class="nav-button"
+        catchtap="navigateStore"
+        data-name="{{item.name}}"
+        data-address="{{item.address}}"
+      >导航</button>
+      <button class="call-button" catchtap="callStore" data-phone="{{item.phone}}">电话</button>
+    </view>
+  </view>
+</view>

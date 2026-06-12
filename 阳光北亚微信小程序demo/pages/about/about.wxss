@@ -1,0 +1,73 @@
+.brand {
+  display: flex;
+  gap: 22rpx;
+  padding: 28rpx;
+}
+
+.brand-logo {
+  flex: 0 0 108rpx;
+  width: 108rpx;
+  height: 108rpx;
+  line-height: 108rpx;
+  border-radius: 54rpx;
+  background: #1f8a70;
+  color: #ffffff;
+  text-align: center;
+  font-weight: 800;
+}
+
+.brand-name {
+  margin-bottom: 10rpx;
+  font-size: 36rpx;
+  font-weight: 800;
+}
+
+.block {
+  padding: 28rpx;
+}
+
+.block-title {
+  margin-bottom: 18rpx;
+  font-size: 32rpx;
+  font-weight: 800;
+}
+
+.line {
+  display: flex;
+  align-items: center;
+  min-height: 58rpx;
+  color: #35424d;
+}
+
+.info-line {
+  margin-bottom: 12rpx;
+  color: #35424d;
+  line-height: 1.55;
+}
+
+.store {
+  padding: 18rpx 0;
+  border-bottom: 1rpx solid #edf0f2;
+}
+
+.store:last-child {
+  border-bottom: 0;
+}
+
+.store-name {
+  margin-bottom: 8rpx;
+  font-size: 30rpx;
+  font-weight: 800;
+}
+
+.dot {
+  width: 14rpx;
+  height: 14rpx;
+  margin-right: 14rpx;
+  border-radius: 7rpx;
+  background: #1f8a70;
+}
+
+.call-button {
+  margin-top: 24rpx;
+}

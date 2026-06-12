@@ -1,0 +1,49 @@
+<view class="page demand-page">
+  <view class="tip card">
+    <view class="tip-title">告诉我们你的家庭需求</view>
+    <view class="muted">提交后顾问会根据服务类型、上户时间和家庭情况推荐合适阿姨。</view>
+  </view>
+
+  <view class="section form card">
+    <view class="field">
+      <view class="label">服务类型</view>
+      <picker mode="selector" range="{{serviceTypes}}" value="{{serviceIndex}}" bindchange="chooseService">
+        <view class="picker-value">{{serviceText}}</view>
+      </picker>
+    </view>
+    <view class="field">
+      <view class="label">联系人</view>
+      <input placeholder="请输入姓名" value="{{form.name}}" bindinput="updateField" data-field="name" />
+    </view>
+    <view class="field">
+      <view class="label">手机号</view>
+      <input type="number" maxlength="11" placeholder="用于顾问联系" value="{{form.phone}}" bindinput="updateField" data-field="phone" />
+    </view>
+    <view class="field">
+      <view class="label">所在城市</view>
+      <input placeholder="例如 北京" value="{{form.city}}" bindinput="updateField" data-field="city" />
+    </view>
+    <view class="field">
+      <view class="label">服务地址</view>
+      <input placeholder="小区或附近地标" value="{{form.address}}" bindinput="updateField" data-field="address" />
+    </view>
+    <view class="field">
+      <view class="label">期望上户时间</view>
+      <input placeholder="例如 本周末 / 6月初" value="{{form.startTime}}" bindinput="updateField" data-field="startTime" />
+    </view>
+    <view class="field">
+      <view class="label">预算范围</view>
+      <input placeholder="例如 8000-10000/月" value="{{form.budget}}" bindinput="updateField" data-field="budget" />
+    </view>
+    <view class="field textarea-field">
+      <view class="label">家庭情况</view>
+      <textarea placeholder="老人/宝宝年龄、家庭人数、是否住家等" value="{{form.familyInfo}}" bindinput="updateField" data-field="familyInfo" />
+    </view>
+    <view class="field textarea-field">
+      <view class="label">其他要求</view>
+      <textarea placeholder="饮食口味、证书要求、休息安排等" value="{{form.note}}" bindinput="updateField" data-field="note" />
+    </view>
+  </view>
+
+  <button class="primary-button submit" bindtap="submitDemand">提交需求</button>
+</view>

@@ -1,0 +1,19 @@
+<view class="page applications-page">
+  <view wx:if="{{noApplications}}" class="empty card">
+    <view class="empty-title">还没有接单申请</view>
+    <view class="muted">去需求大厅看看有没有适合你的家庭需求。</view>
+    <button class="primary-button empty-button" bindtap="goHall">去需求大厅</button>
+  </view>
+
+  <view wx:for="{{applications}}" wx:key="id" class="application card">
+    <view class="topline">
+      <view class="service">{{item.serviceType}}</view>
+      <view class="status">{{item.status}}</view>
+    </view>
+    <view class="muted">地址：{{item.customerAddress}}</view>
+    <view class="muted">上户时间：{{item.startTime}}</view>
+    <view class="muted">预算：{{item.budget}}</view>
+    <view class="info">家庭情况：{{item.familyInfo}}</view>
+    <view class="created">申请时间：{{item.createdAt}}</view>
+  </view>
+</view>

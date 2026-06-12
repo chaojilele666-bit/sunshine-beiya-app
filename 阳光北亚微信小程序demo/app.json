@@ -1,0 +1,47 @@
+{
+  "pages": [
+    "pages/home/home",
+    "pages/service/service",
+    "pages/stores/stores",
+    "pages/ayi-detail/ayi-detail",
+    "pages/booking/booking",
+    "pages/demand/demand",
+    "pages/ayi-profile/ayi-profile",
+    "pages/ayi-certs/ayi-certs",
+    "pages/my-applications/my-applications",
+    "pages/about/about",
+    "pages/mine/mine"
+  ],
+  "window": {
+    "navigationBarTitleText": "北京阳光北亚家政",
+    "navigationBarBackgroundColor": "#ffffff",
+    "navigationBarTextStyle": "black",
+    "backgroundColor": "#f6f7f9"
+  },
+  "tabBar": {
+    "color": "#7a7f87",
+    "selectedColor": "#1f8a70",
+    "backgroundColor": "#ffffff",
+    "borderStyle": "white",
+    "list": [
+      {
+        "pagePath": "pages/home/home",
+        "text": "首页"
+      },
+      {
+        "pagePath": "pages/service/service",
+        "text": "服务"
+      },
+      {
+        "pagePath": "pages/stores/stores",
+        "text": "门店"
+      },
+      {
+        "pagePath": "pages/mine/mine",
+        "text": "我的"
+      }
+    ]
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json"
+}

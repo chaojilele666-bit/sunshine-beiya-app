@@ -1,0 +1,54 @@
+<view class="page about-page">
+  <view class="brand card">
+    <view class="brand-logo">阳光</view>
+    <view>
+      <view class="brand-name">北京阳光北亚家政</view>
+      <view class="muted">家庭服务匹配平台，覆盖一般家政、母婴服务、育婴服务、养老护理、保洁助餐等。</view>
+    </view>
+  </view>
+
+  <view class="section card block">
+    <view class="block-title">公司信息</view>
+    <view class="info-line">服务区域：北京东城、朝阳、海淀、丰台、通州等</view>
+    <view class="info-line">联系地址：{{address}}</view>
+    <view class="info-line">营业时间：08:00-20:00</view>
+  </view>
+
+  <view class="section card block">
+    <view class="block-title">服务范围</view>
+    <view>
+      <text wx:for="{{services}}" wx:key="*this" class="tag">{{item}}</text>
+    </view>
+  </view>
+
+  <view class="section card block">
+    <view class="block-title">门店/服务点</view>
+    <view wx:for="{{stores}}" wx:key="name" class="store">
+      <view class="store-name">{{item.name}}</view>
+      <view class="muted">覆盖：{{item.area}}</view>
+      <view class="muted">{{item.address}}</view>
+    </view>
+  </view>
+
+  <view class="section card block">
+    <view class="block-title">服务流程</view>
+    <view wx:for="{{process}}" wx:key="*this" class="line">
+      <view class="dot"></view>
+      <text>{{item}}</text>
+    </view>
+  </view>
+
+  <view class="section card block">
+    <view class="block-title">服务保障</view>
+    <view wx:for="{{guarantees}}" wx:key="*this" class="line">
+      <view class="dot"></view>
+      <text>{{item}}</text>
+    </view>
+  </view>
+
+  <view class="section card block">
+    <view class="block-title">客服咨询</view>
+    <view class="muted">如果不确定适合哪类阿姨，可以先电话沟通需求。</view>
+    <button class="primary-button call-button" bindtap="callService">联系客服</button>
+  </view>
+</view>

@@ -1,0 +1,56 @@
+<view class="page detail-page" wx:if="{{ayi}}">
+  <view class="profile card">
+    <view class="avatar" style="background: {{ayi.avatarColor}};">{{ayi.avatarText}}</view>
+    <view class="profile-main">
+      <view class="name-row">
+        <text class="name">{{ayi.name}}</text>
+        <text class="role">{{ayi.role}}</text>
+      </view>
+      <view class="muted">{{ayi.age}} 岁 · {{ayi.experience}} 年经验 · {{ayi.hometown}}</view>
+      <view class="score">{{ayi.rating}} 分 · {{ayi.orders}} 次服务</view>
+    </view>
+  </view>
+
+  <view class="section card block">
+    <view class="block-title">服务价格</view>
+    <view class="price">¥{{ayi.salary}}</view>
+    <view class="muted">{{ayi.schedule}}</view>
+  </view>
+
+  <view class="section card block">
+    <view class="block-title">服务信息</view>
+    <view class="detail-line">是否住家：{{ayi.liveType}}</view>
+    <view class="detail-line">可服务区域：{{ayi.area}}</view>
+    <view class="detail-line">最近可约：{{ayi.available}}</view>
+  </view>
+
+  <view class="section card block">
+    <view class="block-title">擅长服务</view>
+    <view>
+      <text wx:for="{{ayi.skills}}" wx:key="*this" class="tag">{{item}}</text>
+    </view>
+  </view>
+
+  <view class="section card block">
+    <view class="block-title">服务保障</view>
+    <view>
+      <text wx:for="{{ayi.badges}}" wx:key="*this" class="tag">{{item}}</text>
+    </view>
+  </view>
+
+  <view class="section card block">
+    <view class="block-title">个人介绍</view>
+    <view class="intro">{{ayi.intro}}</view>
+    <view wx:for="{{ayi.detail}}" wx:key="*this" class="detail-line">{{item}}</view>
+  </view>
+
+  <view class="section card block">
+    <view class="block-title">客户评价</view>
+    <view class="intro">{{ayi.comment}}</view>
+  </view>
+
+  <view class="bottom-bar">
+    <button class="ghost-button">在线咨询</button>
+    <button class="primary-button" bindtap="goBooking">预约面试</button>
+  </view>
+</view>

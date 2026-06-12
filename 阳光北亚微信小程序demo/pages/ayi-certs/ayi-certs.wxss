@@ -1,0 +1,34 @@
+.tip {
+  padding: 28rpx;
+  margin-bottom: 22rpx;
+}
+
+.tip-title {
+  margin-bottom: 10rpx;
+  font-size: 34rpx;
+  font-weight: 800;
+}
+
+.cert {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18rpx;
+  margin-bottom: 18rpx;
+  padding: 28rpx;
+}
+
+.cert-title {
+  margin-bottom: 8rpx;
+  font-size: 32rpx;
+  font-weight: 800;
+}
+
+.cert-button {
+  flex: 0 0 132rpx;
+  margin: 0;
+}
+
+.submit {
+  margin-top: 34rpx;
+}

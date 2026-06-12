@@ -1,0 +1,34 @@
+<view class="page booking-page" wx:if="{{ayi}}">
+  <view class="summary card">
+    <view class="avatar" style="background: {{ayi.avatarColor}};">{{ayi.avatarText}}</view>
+    <view>
+      <view class="name">{{ayi.name}} · {{ayi.role}}</view>
+      <view class="muted">{{ayi.schedule}} · ¥{{ayi.salary}}</view>
+    </view>
+  </view>
+
+  <view class="section form card">
+    <view class="field">
+      <view class="label">联系人</view>
+      <input placeholder="请输入姓名" value="{{form.name}}" bindinput="updateField" data-field="name" />
+    </view>
+    <view class="field">
+      <view class="label">手机号</view>
+      <input type="number" maxlength="11" placeholder="用于顾问联系" value="{{form.phone}}" bindinput="updateField" data-field="phone" />
+    </view>
+    <view class="field">
+      <view class="label">面试日期</view>
+      <input placeholder="例如 5月20日上午" value="{{form.date}}" bindinput="updateField" data-field="date" />
+    </view>
+    <view class="field">
+      <view class="label">服务地址</view>
+      <input placeholder="小区或附近地标" value="{{form.address}}" bindinput="updateField" data-field="address" />
+    </view>
+    <view class="field textarea-field">
+      <view class="label">需求备注</view>
+      <textarea placeholder="家庭成员、服务时长、饮食口味等" value="{{form.note}}" bindinput="updateField" data-field="note" />
+    </view>
+  </view>
+
+  <button class="primary-button submit" bindtap="submitBooking">提交预约</button>
+</view>

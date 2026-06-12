@@ -1,0 +1,57 @@
+.summary {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  padding: 24rpx;
+}
+
+.avatar {
+  width: 104rpx;
+  height: 104rpx;
+  line-height: 104rpx;
+  border-radius: 52rpx;
+  color: #1f2933;
+  text-align: center;
+  font-size: 34rpx;
+  font-weight: 800;
+}
+
+.name {
+  margin-bottom: 8rpx;
+  font-size: 34rpx;
+  font-weight: 800;
+}
+
+.form {
+  padding: 4rpx 24rpx;
+}
+
+.field {
+  padding: 24rpx 0;
+  border-bottom: 1rpx solid #edf0f2;
+}
+
+.field:last-child {
+  border-bottom: 0;
+}
+
+.label {
+  margin-bottom: 12rpx;
+  color: #35424d;
+  font-weight: 700;
+}
+
+input {
+  height: 56rpx;
+  color: #1f2933;
+}
+
+textarea {
+  width: 100%;
+  min-height: 150rpx;
+  color: #1f2933;
+}
+
+.submit {
+  margin-top: 34rpx;
+}

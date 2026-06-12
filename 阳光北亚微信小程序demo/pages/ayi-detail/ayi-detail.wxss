@@ -1,0 +1,92 @@
+.detail-page {
+  padding-bottom: 132rpx;
+}
+
+.profile {
+  display: flex;
+  gap: 24rpx;
+  padding: 28rpx;
+}
+
+.avatar {
+  flex: 0 0 148rpx;
+  width: 148rpx;
+  height: 148rpx;
+  line-height: 148rpx;
+  border-radius: 74rpx;
+  color: #1f2933;
+  text-align: center;
+  font-size: 46rpx;
+  font-weight: 800;
+}
+
+.profile-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.name-row {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+  margin-bottom: 10rpx;
+}
+
+.name {
+  font-size: 40rpx;
+  font-weight: 800;
+}
+
+.role {
+  padding: 4rpx 14rpx;
+  border-radius: 18rpx;
+  background: #fff3df;
+  color: #8b5d33;
+  font-size: 22rpx;
+}
+
+.score {
+  margin-top: 16rpx;
+  color: #d45d3c;
+  font-weight: 700;
+}
+
+.block {
+  padding: 26rpx;
+}
+
+.block-title {
+  margin-bottom: 16rpx;
+  font-size: 32rpx;
+  font-weight: 800;
+}
+
+.price {
+  margin-bottom: 8rpx;
+  color: #d45d3c;
+  font-size: 40rpx;
+  font-weight: 800;
+}
+
+.intro,
+.detail-line {
+  color: #35424d;
+  line-height: 1.65;
+}
+
+.detail-line {
+  margin-top: 10rpx;
+}
+
+.bottom-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: grid;
+  grid-template-columns: 220rpx 1fr;
+  gap: 18rpx;
+  padding: 18rpx 24rpx calc(18rpx + env(safe-area-inset-bottom));
+  background: #ffffff;
+  box-shadow: 0 -8rpx 24rpx rgba(31, 41, 51, 0.08);
+}

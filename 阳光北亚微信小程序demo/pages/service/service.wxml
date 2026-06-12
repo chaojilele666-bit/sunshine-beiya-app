@@ -1,0 +1,133 @@
+<view class="page service-page">
+  <view wx:if="{{noRole}}" class="empty card">
+    <view class="empty-title">请先选择身份</view>
+    <view class="muted">客户看阿姨，阿姨看工作。</view>
+    <button class="primary-button empty-button" bindtap="chooseRole">去选择身份</button>
+  </view>
+
+  <view wx:if="{{isCustomer}}">
+    <view class="search-row">
+      <view class="city">北京</view>
+      <view class="search-box">
+        <text class="search-icon">⌕</text>
+        <input placeholder="阿姨姓名/籍贯/工种" value="{{query}}" bindinput="updateQuery" />
+      </view>
+    </view>
+
+    <view class="feature-grid">
+      <view class="feature-card large" bindtap="useFeature" data-type="demand">
+        <view class="feature-title">发布需求</view>
+        <view class="feature-desc">顾问帮您匹配</view>
+      </view>
+      <view class="feature-card" bindtap="useFeature" data-type="全部">
+        <view class="feature-title">好阿姨严选</view>
+        <view class="feature-desc">认证优先展示</view>
+      </view>
+      <view class="feature-card" bindtap="useFeature" data-type="住家保姆">
+        <view class="feature-title">做饭好吃</view>
+        <view class="feature-desc">家务餐食</view>
+      </view>
+      <view class="feature-card" bindtap="useFeature" data-type="老人陪护">
+        <view class="feature-title">养老护理</view>
+        <view class="feature-desc">陪诊照护</view>
+      </view>
+    </view>
+
+    <scroll-view class="type-scroll" scroll-x enable-flex>
+      <view class="type-row">
+        <view
+          wx:for="{{serviceTypes}}"
+          wx:key="name"
+          class="type-pill {{item.activeClass}}"
+          bindtap="changeType"
+          data-type="{{item.name}}"
+        >
+          {{item.name}}
+        </view>
+      </view>
+    </scroll-view>
+
+    <view class="filter-bar">
+      <view wx:for="{{filterTips}}" wx:key="*this" class="filter-item" bindtap="showFilter" data-name="{{item}}">{{item}}⌄</view>
+    </view>
+
+    <view wx:for="{{visibleAyis}}" wx:key="id" class="ayi-card card" bindtap="goAyiDetail" data-id="{{item.id}}">
+      <view class="avatar" style="background: {{item.avatarColor}};">{{item.avatarText}}</view>
+      <view class="content">
+        <view class="topline">
+          <view>
+            <text class="name">{{item.name}}</text>
+            <text class="role-tag">{{item.role}}</text>
+          </view>
+          <view class="rating">{{item.rating}} 分</view>
+        </view>
+        <view class="muted">{{item.age}} 岁 · {{item.experience}} 年经验 · {{item.hometown}}</view>
+        <view class="info">{{item.intro}}</view>
+        <view class="bottom">
+          <text class="price">¥{{item.salary}}</text>
+          <text class="muted">{{item.schedule}}</text>
+        </view>
+      </view>
+    </view>
+
+    <view wx:if="{{noAyis}}" class="empty card">
+      <view class="empty-title">暂时没有符合条件的阿姨</view>
+      <view class="muted">换个工种或关键词再试试。</view>
+    </view>
+  </view>
+
+  <view wx:if="{{isAyi}}">
+    <view class="work-head">
+      <view class="work-tile" bindtap="goProfile">加入阳光北亚</view>
+      <view class="work-tile" bindtap="goCerts">实名认证</view>
+    </view>
+
+    <view class="hero">
+      <view class="eyebrow">找工作</view>
+      <view class="title">今日工作机会</view>
+      <view class="muted">按工种、区域、预算筛选合适上户单。</view>
+      <view class="hero-actions">
+        <button class="primary-button hero-button" bindtap="goProfile">完善资料</button>
+        <button class="ghost-button hero-button" bindtap="goCerts">上传证件</button>
+      </view>
+    </view>
+
+    <scroll-view class="type-scroll" scroll-x enable-flex>
+      <view class="type-row">
+        <view
+          wx:for="{{serviceTypes}}"
+          wx:key="name"
+          class="type-pill {{item.activeClass}}"
+          bindtap="changeType"
+          data-type="{{item.name}}"
+        >
+          {{item.name}}
+        </view>
+      </view>
+    </scroll-view>
+
+    <view wx:for="{{demands}}" wx:key="id" class="demand-card card">
+      <view class="topline">
+        <view class="name">{{item.serviceType}}</view>
+        <view class="price">{{item.budget}}</view>
+      </view>
+      <view class="muted">地址：{{item.city}} {{item.address}}</view>
+      <view class="muted">上户时间：{{item.startTime}}</view>
+      <view class="muted">状态：{{item.status}}</view>
+      <view class="info">家庭情况：{{item.familyInfo}}</view>
+      <button
+        class="{{item.buttonClass}} apply-button"
+        disabled="{{item.disabled}}"
+        bindtap="applyDemand"
+        data-id="{{item.id}}"
+      >
+        {{item.buttonText}}
+      </button>
+    </view>
+
+    <view wx:if="{{noDemands}}" class="empty card">
+      <view class="empty-title">暂时没有符合条件的工作</view>
+      <view class="muted">换个工种看看，后续后台可以随时更新今日工作。</view>
+    </view>
+  </view>
+</view>

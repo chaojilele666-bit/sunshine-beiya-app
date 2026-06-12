@@ -1,0 +1,54 @@
+<view class="page profile-page">
+  <view class="section form card">
+    <view class="field">
+      <view class="label">服务类型</view>
+      <picker mode="selector" range="{{serviceTypes}}" value="{{serviceIndex}}" bindchange="chooseService">
+        <view class="picker-value">{{serviceText}}</view>
+      </picker>
+    </view>
+    <view class="field">
+      <view class="label">姓名</view>
+      <input placeholder="请输入真实姓名" value="{{form.name}}" bindinput="updateField" data-field="name" />
+    </view>
+    <view class="field">
+      <view class="label">手机号</view>
+      <input type="number" maxlength="11" placeholder="用于顾问联系" value="{{form.phone}}" bindinput="updateField" data-field="phone" />
+    </view>
+    <view class="field">
+      <view class="label">年龄</view>
+      <input type="number" placeholder="例如 42" value="{{form.age}}" bindinput="updateField" data-field="age" />
+    </view>
+    <view class="field">
+      <view class="label">籍贯</view>
+      <input placeholder="例如 河北保定" value="{{form.hometown}}" bindinput="updateField" data-field="hometown" />
+    </view>
+    <view class="field">
+      <view class="label">工作年限</view>
+      <input type="number" placeholder="例如 8" value="{{form.experience}}" bindinput="updateField" data-field="experience" />
+    </view>
+    <view class="field">
+      <view class="label">是否住家</view>
+      <picker mode="selector" range="{{liveOptions}}" value="{{liveIndex}}" bindchange="chooseLive">
+        <view class="picker-value">{{liveText}}</view>
+      </picker>
+    </view>
+    <view class="field">
+      <view class="label">期望薪资</view>
+      <input placeholder="例如 9000-12000/月" value="{{form.salary}}" bindinput="updateField" data-field="salary" />
+    </view>
+    <view class="field">
+      <view class="label">可上户时间</view>
+      <input placeholder="例如 随时 / 下周" value="{{form.availableTime}}" bindinput="updateField" data-field="availableTime" />
+    </view>
+    <view class="field textarea-field">
+      <view class="label">技能标签</view>
+      <textarea placeholder="例如 辅食制作、老人陪护、收纳整理" value="{{form.skills}}" bindinput="updateField" data-field="skills" />
+    </view>
+    <view class="field textarea-field">
+      <view class="label">自我介绍</view>
+      <textarea placeholder="介绍服务经验、性格特点、擅长内容" value="{{form.intro}}" bindinput="updateField" data-field="intro" />
+    </view>
+  </view>
+
+  <button class="primary-button submit" bindtap="submitProfile">保存资料</button>
+</view>

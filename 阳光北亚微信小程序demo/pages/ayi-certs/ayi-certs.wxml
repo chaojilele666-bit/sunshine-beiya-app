@@ -1,0 +1,32 @@
+<view class="page certs-page">
+  <view class="tip card">
+    <view class="tip-title">上传审核材料</view>
+    <view class="muted">第一版先保存在当前会话中，后续接后台后可上传审核。</view>
+  </view>
+
+  <view class="cert card">
+    <view>
+      <view class="cert-title">身份证</view>
+      <view class="muted">{{idCardText}}</view>
+    </view>
+    <button class="ghost-button cert-button" bindtap="chooseCert" data-type="idCard">选择</button>
+  </view>
+
+  <view class="cert card">
+    <view>
+      <view class="cert-title">健康证</view>
+      <view class="muted">{{healthCertText}}</view>
+    </view>
+    <button class="ghost-button cert-button" bindtap="chooseCert" data-type="healthCert">选择</button>
+  </view>
+
+  <view class="cert card">
+    <view>
+      <view class="cert-title">技能证书</view>
+      <view class="muted">{{skillCertText}}</view>
+    </view>
+    <button class="ghost-button cert-button" bindtap="chooseCert" data-type="skillCert">选择</button>
+  </view>
+
+  <button class="primary-button submit" bindtap="saveCerts">保存证件</button>
+</view>
