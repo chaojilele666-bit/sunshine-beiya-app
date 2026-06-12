@@ -1,0 +1,22 @@
+name: sunshine-beiya-database
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: sunshine_beiya_postgres
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - sunshine_beiya_postgres_data:/var/lib/postgresql/data
+      - ./init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-sunshine_beiya} -d $${POSTGRES_DB:-sunshine_beiya}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  sunshine_beiya_postgres_data:
