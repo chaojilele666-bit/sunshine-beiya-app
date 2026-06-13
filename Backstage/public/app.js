@@ -156,6 +156,25 @@ const resources = {
       `状态：${item.status || '-'} / ${item.payStatus || '-'}`
     ]
   },
+  orderDispatches: {
+    title: '人工派单',
+    desc: '记录订单人工派单和更换阿姨过程，供老板端查看最近操作。',
+    fields: [
+      ['orderId', '订单ID', 'number'],
+      ['orderNo', '订单编号'],
+      ['ayiName', '阿姨姓名'],
+      ['ayiPhone', '阿姨手机号'],
+      ['dispatchType', '派单类型', 'select', ['人工派单', '更换阿姨']],
+      ['status', '状态', 'select', ['已派单', '已接受', '已拒绝', '已取消']],
+      ['assignedBy', '派单人'],
+      ['note', '备注', 'textarea']
+    ],
+    summary: (item) => [
+      `${item.orderNo || item.orderId || '-'} / ${item.ayiName || '-'}`,
+      `${item.dispatchType || '-'} / ${item.assignedBy || '-'}`,
+      `状态：${item.status || '-'}`
+    ]
+  },
   stores: {
     title: '门店信息',
     desc: '维护门店名称、地址、电话、覆盖范围和是否显示。',
@@ -199,6 +218,7 @@ let currentRecord = null;
 let cache = [];
 let pendingImages = {};
 let currentUser = null;
+let expandedAccountRole = null;
 
 const list = document.querySelector('#list');
 const form = document.querySelector('#form');
@@ -212,8 +232,8 @@ const loginTip = document.querySelector('#loginTip');
 const currentUserLabel = document.querySelector('#currentUser');
 
 const roleAccess = {
-  '老板端': ['dashboard', 'accounts', 'ayis', 'demands', 'appointments', 'applications', 'orders', 'stores', 'serviceModules', 'banners'],
-  '运营端': ['ayis', 'demands', 'appointments', 'applications', 'orders', 'stores', 'serviceModules', 'banners']
+  '老板端': ['dashboard', 'accounts', 'ayis', 'demands', 'appointments', 'applications', 'orders', 'orderDispatches', 'stores', 'serviceModules', 'banners'],
+  '运营端': ['ayis', 'demands', 'appointments', 'applications', 'orders', 'orderDispatches', 'stores', 'serviceModules', 'banners']
 };
 
 const accountGroups = [
@@ -258,7 +278,7 @@ function normalizeValue(key, value) {
   if (['canStay', 'visible'].includes(key)) {
     return value === true || value === 'true';
   }
-  if (['age', 'experience', 'sort', 'demandId'].includes(key)) {
+  if (['age', 'experience', 'sort', 'demandId', 'orderId'].includes(key)) {
     return Number(value) || 0;
   }
   return value;
@@ -279,8 +299,15 @@ function getStatusClass(status) {
 }
 
 async function api(path, options) {
+  const headers = {
+    'Content-Type': 'application/json'
+  };
+  if (currentUser) {
+    headers['x-actor-name'] = encodeURIComponent(currentUser.name || currentUser.phone || '后台');
+    headers['x-actor-role'] = encodeURIComponent(currentUser.role || 'system');
+  }
   const response = await fetch(`/api/${path}`, {
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     ...options
   });
   if (!response.ok) {
@@ -453,16 +480,20 @@ function renderAccountsList() {
   const realAccounts = cache.filter((item) => !isEntrancePlanAccount(item));
   const groupsHtml = accountGroups.map((group) => {
     const rows = realAccounts.filter((item) => item.role === group.role);
+    const isExpanded = expandedAccountRole === group.role;
     return `
-      <section class="account-group">
-        <div class="account-group-head">
+      <section class="account-group ${isExpanded ? 'is-expanded' : ''}">
+        <button class="account-group-toggle" data-action="toggle-account-group" data-role="${escapeHtml(group.role)}">
           <div>
             <h3>${escapeHtml(group.title)}</h3>
             <p>${escapeHtml(group.desc)}</p>
           </div>
-          <strong>${rows.length} 个</strong>
-        </div>
-        ${rows.map(renderAccountRow).join('') || '<p class="muted">暂无账号，点击右上角“新增”创建。</p>'}
+          <span>
+            <strong>${rows.length} 个</strong>
+            <em>${isExpanded ? '收起' : '展开'}</em>
+          </span>
+        </button>
+        ${isExpanded ? (rows.map(renderAccountRow).join('') || '<p class="muted">暂无账号，点击右上角“新增”创建。</p>') : ''}
       </section>
     `;
   }).join('');
@@ -592,6 +623,11 @@ loginOptions.addEventListener('click', async (event) => {
 list.addEventListener('click', async (event) => {
   const button = event.target.closest('button');
   if (!button) return;
+  if (button.dataset.action === 'toggle-account-group') {
+    expandedAccountRole = expandedAccountRole === button.dataset.role ? null : button.dataset.role;
+    renderAccountsList();
+    return;
+  }
   const id = Number(button.dataset.id);
   if (button.dataset.action === 'edit') {
     const record = cache.find((item) => item.id === id);

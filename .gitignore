@@ -144,11 +144,16 @@ rabbitmq-data/
 # ActiveMQ
 activemq-data/
 
+# Node
+node_modules/
+
 # SageMath parsed files
 *.sage.py
 
 # Environments
 .env
+.env.*
+!.env.example
 .envrc
 .venv
 env/

@@ -332,32 +332,55 @@ h1 {
   background: #fff;
 }
 
-.account-group-head {
+.account-group-toggle {
+  width: 100%;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
+  padding: 0;
+  background: transparent;
+  color: #1f2933;
+  text-align: left;
+}
+
+.account-group.is-expanded .account-group-toggle {
   margin-bottom: 12px;
   padding-bottom: 12px;
   border-bottom: 1px solid #edf0f2;
 }
 
-.account-group-head h3 {
+.account-group-toggle h3 {
   margin: 0;
 }
 
-.account-group-head p {
+.account-group-toggle p {
   margin-top: 4px;
   color: #6b7280;
+  font-weight: 400;
 }
 
-.account-group-head strong {
+.account-group-toggle span {
+  display: grid;
+  justify-items: end;
+  gap: 6px;
+  min-width: 74px;
+}
+
+.account-group-toggle strong {
   min-width: 52px;
   padding: 6px 10px;
   border-radius: 999px;
   background: #eef7f4;
   color: #1f8a70;
   text-align: center;
+}
+
+.account-group-toggle em {
+  color: #6b7280;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 800;
 }
 
 .account-row {

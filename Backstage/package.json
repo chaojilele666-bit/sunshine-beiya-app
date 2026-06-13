@@ -1,0 +1,16 @@
+{
+  "name": "sunshine-beiya-backstage",
+  "version": "1.0.0",
+  "description": "Local Backstage MVP server for Sunshine Beiya.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "migrate:data-json": "node scripts/migrateDataJsonToPostgres.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "pg": "^8.21.0"
+  }
+}

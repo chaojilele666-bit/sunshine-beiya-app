@@ -1,6 +1,10 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const db = require('./db');
+const backstageRepository = require('./repositories/backstageRepository');
+const resourceRepository = require('./repositories/resourceRepository');
+const serviceCatalogRepository = require('./repositories/serviceCatalogRepository');
 
 const PORT = 5177;
 const ROOT = __dirname;
@@ -127,29 +131,145 @@ async function handleApi(req, res) {
   const parts = req.url.split('?')[0].split('/').filter(Boolean);
   const resource = parts[1];
   const id = parts[2] ? Number(parts[2]) : null;
-  const allowed = ['accounts', 'ayis', 'demands', 'appointments', 'applications', 'orders', 'stores', 'serviceModules', 'banners'];
+  const allowed = ['accounts', 'ayis', 'demands', 'appointments', 'applications', 'orders', 'stores', 'serviceModules', 'banners', 'orderDispatches'];
+
+  if (resource === 'health' && parts[2] === 'database' && req.method === 'GET') {
+    try {
+      const result = await db.checkDatabase();
+      send(res, 200, {
+        ok: true,
+        source: 'postgres',
+        database: db.getDatabaseSummary(),
+        result
+      });
+    } catch (error) {
+      send(res, 503, {
+        ok: false,
+        source: 'postgres',
+        error: 'Database unavailable',
+        detail: error.message
+      });
+    }
+    return;
+  }
+
+  if (resource === 'service-categories' && req.method === 'GET') {
+    try {
+      send(res, 200, {
+        source: 'postgres',
+        data: await serviceCatalogRepository.listServiceCategories()
+      });
+    } catch (error) {
+      send(res, 503, {
+        source: 'postgres',
+        error: 'Database unavailable',
+        detail: error.message
+      });
+    }
+    return;
+  }
+
+  if (resource === 'service-items' && req.method === 'GET') {
+    try {
+      send(res, 200, {
+        source: 'postgres',
+        data: await serviceCatalogRepository.listServiceItems()
+      });
+    } catch (error) {
+      send(res, 503, {
+        source: 'postgres',
+        error: 'Database unavailable',
+        detail: error.message
+      });
+    }
+    return;
+  }
+
+  if (resource === 'service-catalog' && req.method === 'GET') {
+    try {
+      send(res, 200, {
+        source: 'postgres',
+        data: await serviceCatalogRepository.getServiceCatalog()
+      });
+    } catch (error) {
+      send(res, 503, {
+        source: 'postgres',
+        error: 'Database unavailable',
+        detail: error.message
+      });
+    }
+    return;
+  }
 
   if (resource === 'dashboard' && req.method === 'GET') {
-    send(res, 200, makeDashboard(readData()));
+    try {
+      send(res, 200, await backstageRepository.getDashboard());
+    } catch (error) {
+      sendError(res, 503, 'Database unavailable', error.message);
+    }
     return;
   }
 
   if (resource === 'miniprogram' && req.method === 'GET') {
-    const data = readData();
-    const visibleStores = (data.stores || []).filter((item) => item.visible !== false);
-    const visibleModules = (data.serviceModules || [])
-      .filter((item) => item.visible !== false)
-      .sort((a, b) => Number(a.sort || 0) - Number(b.sort || 0));
-    const certifiedAyis = (data.ayis || []).filter((item) => item.status === '已认证');
-    const openDemands = (data.demands || []).filter((item) => !['已成交', '已取消'].includes(item.status));
+    try {
+      send(res, 200, await backstageRepository.getMiniprogramData());
+    } catch (error) {
+      const data = readData();
+      const visibleStores = (data.stores || []).filter((item) => item.visible !== false);
+      const visibleModules = (data.serviceModules || [])
+        .filter((item) => item.visible !== false)
+        .sort((a, b) => Number(a.sort || 0) - Number(b.sort || 0));
+      const certifiedAyis = (data.ayis || []).filter((item) => item.status === '已认证');
+      const openDemands = (data.demands || []).filter((item) => !['已成交', '已取消'].includes(item.status));
 
-    send(res, 200, {
-      ayis: certifiedAyis,
-      demands: openDemands,
-      stores: visibleStores,
-      serviceModules: visibleModules,
-      banners: (data.banners || []).filter((item) => item.visible !== false).sort((a, b) => Number(a.sort || 0) - Number(b.sort || 0))
-    });
+      send(res, 200, {
+        source: 'data-json-fallback',
+        databaseUnavailable: true,
+        error: error.message,
+        ayis: certifiedAyis,
+        demands: openDemands,
+        stores: visibleStores,
+        serviceModules: visibleModules,
+        banners: (data.banners || []).filter((item) => item.visible !== false).sort((a, b) => Number(a.sort || 0) - Number(b.sort || 0))
+      });
+    }
+    return;
+  }
+
+  if (resource === 'orderDispatches') {
+    try {
+      if (req.method === 'GET') {
+        send(res, 200, await backstageRepository.listDispatches());
+        return;
+      }
+      if (req.method === 'POST') {
+        const body = await readBody(req);
+        send(res, 201, await backstageRepository.createDispatch(body, getActor(req)));
+        return;
+      }
+      if (req.method === 'PUT' && id) {
+        const body = await readBody(req);
+        const record = await resourceRepository.update(resource, id, body, getActor(req));
+        if (!record) {
+          send(res, 404, { error: 'Record not found' });
+          return;
+        }
+        send(res, 200, record);
+        return;
+      }
+      if (req.method === 'DELETE' && id) {
+        const deleted = await resourceRepository.remove(resource, id, getActor(req));
+        if (!deleted) {
+          send(res, 404, { error: 'Record not found' });
+          return;
+        }
+        send(res, 200, { ok: true });
+        return;
+      }
+      send(res, 405, { error: 'Method not allowed' });
+    } catch (error) {
+      sendError(res, 400, 'Order dispatch failed', error.message);
+    }
     return;
   }
 
@@ -158,50 +278,51 @@ async function handleApi(req, res) {
     return;
   }
 
-  const data = readData();
-  data[resource] = data[resource] || [];
-
   if (req.method === 'GET') {
-    send(res, 200, id ? data[resource].find((item) => item.id === id) || null : data[resource]);
+    try {
+      send(res, 200, id ? await resourceRepository.findById(resource, id) : await resourceRepository.list(resource));
+    } catch (error) {
+      sendError(res, 503, 'Database unavailable', error.message);
+    }
     return;
   }
 
   if (req.method === 'POST') {
-    const body = await readBody(req);
-    const record = Object.assign({}, body, { id: nextId(data[resource]) });
-    data[resource].unshift(record);
-    writeData(data);
-    send(res, 201, record);
+    try {
+      const body = await readBody(req);
+      send(res, 201, await resourceRepository.create(resource, body, getActor(req)));
+    } catch (error) {
+      sendError(res, 400, 'Create failed', error.message);
+    }
     return;
   }
 
   if (req.method === 'PUT' && id) {
-    const body = await readBody(req);
-    const index = data[resource].findIndex((item) => item.id === id);
-    if (index < 0) {
-      send(res, 404, { error: 'Record not found' });
-      return;
+    try {
+      const body = await readBody(req);
+      const record = await resourceRepository.update(resource, id, body, getActor(req));
+      if (!record) {
+        send(res, 404, { error: 'Record not found' });
+        return;
+      }
+      send(res, 200, record);
+    } catch (error) {
+      sendError(res, 400, 'Update failed', error.message);
     }
-    data[resource][index] = Object.assign({}, data[resource][index], body, { id });
-    writeData(data);
-    send(res, 200, data[resource][index]);
     return;
   }
 
   if (req.method === 'DELETE' && id) {
-    if (resource === 'accounts') {
-      const target = data.accounts.find((item) => item.id === id);
-      if (target && target.role === '老板端') {
-        const remainingBosses = data.accounts.filter((item) => item.id !== id && item.role === '老板端' && item.status !== '停用');
-        if (remainingBosses.length === 0) {
-          send(res, 400, { error: '至少保留一个启用的老板端账号，否则后台会进不去。' });
-          return;
-        }
+    try {
+      const deleted = await resourceRepository.remove(resource, id, getActor(req));
+      if (!deleted) {
+        send(res, 404, { error: 'Record not found' });
+        return;
       }
+      send(res, 200, { ok: true });
+    } catch (error) {
+      sendError(res, 400, 'Delete failed', error.message);
     }
-    data[resource] = data[resource].filter((item) => item.id !== id);
-    writeData(data);
-    send(res, 200, { ok: true });
     return;
   }
 
@@ -227,3 +348,34 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, () => {
   console.log(`北京阳光北亚家政后台已启动: http://localhost:${PORT}`);
 });
+
+async function shutdown() {
+  await db.closePool();
+  server.close(() => process.exit(0));
+}
+
+function sendError(res, status, message, detail) {
+  send(res, status, {
+    ok: false,
+    error: message,
+    detail
+  });
+}
+
+function getActor(req) {
+  const decodeHeader = (value, fallback) => {
+    if (!value) return fallback;
+    try {
+      return decodeURIComponent(value);
+    } catch (error) {
+      return value;
+    }
+  };
+  return {
+    name: decodeHeader(req.headers['x-actor-name'], '后台'),
+    role: decodeHeader(req.headers['x-actor-role'], 'system')
+  };
+}
+
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
