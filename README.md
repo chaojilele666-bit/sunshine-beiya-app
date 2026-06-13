@@ -1,41 +1,101 @@
-# sunshine-beiya-app
+# 北京阳光北亚家政平台
 
-Sunshine Beiya Home Service Platform
+这是“北京阳光北亚家政平台”的项目仓库，用于保存微信小程序前端、本地后台原型、数据库设计和项目说明文档。
 
-## Project documents
+当前项目仍处于 MVP 原型和早期开发阶段，不是正式上线版。
 
-- `docs/PROJECT_LOG.md` — current product framework, priorities, product boundaries, and chronological update history
-- `docs/database-design.md` — current database design
-- `database/README.md` — local database setup
-
-Before changing the project, read `docs/PROJECT_LOG.md`. After every meaningful change, append a dated entry describing the state before the change, the exact changes, validation, and the state after the change.
-
-## Current product boundary
-
-The first version focuses on customer service requests, manual administrator assignment, worker task execution, status tracking, reviews, complaints, and follow-up.
-
-Online payment is not part of the current product scope. New development must not depend on the legacy `payments` table.
-
-## Database
-
-This repository includes a real local PostgreSQL database foundation for development and backend integration.
-
-Database files are under:
+## 当前目录
 
 ```text
-database/
+Backstage/   本地后台管理原型
+frontend/    微信小程序 demo
+database/    本地 PostgreSQL 数据库设计与初始化脚本
+docs/        项目说明、设计记录和更新日志
 ```
 
-Quick start:
+## 当前项目定位
 
-```bash
-cd database
-cp .env.example .env
-docker compose up -d
+第一阶段目标是先跑通家政业务的核心流程：
+
+- 客户提交家政服务需求；
+- 后台运营人员确认需求并人工匹配阿姨；
+- 阿姨查看工作机会或接单记录；
+- 后台跟进预约、接单、订单、门店、公司服务内容；
+- 老板端查看经营数据和业务汇总。
+
+当前版本重点是验证流程、字段和页面结构，不直接作为生产系统使用。
+
+## 运行后台原型
+
+进入后台目录：
+
+```powershell
+cd Backstage
+node server.js
 ```
 
-Connect to the database:
+浏览器打开：
 
-```bash
-docker compose exec postgres psql -U sunshine_beiya -d sunshine_beiya
+```text
+http://localhost:5177
 ```
+
+小程序读取后台演示数据的接口：
+
+```text
+http://localhost:5177/api/miniprogram
+```
+
+后台本地演示数据文件：
+
+```text
+Backstage/data.json
+```
+
+## 运行微信小程序 demo
+
+用微信开发者工具导入：
+
+```text
+frontend/
+```
+
+当前小程序会请求本地后台：
+
+```text
+http://localhost:5177
+```
+
+如果后台没有启动，小程序会使用本地示例数据兜底，方便继续演示。
+
+## 数据库目录说明
+
+`database/` 目录目前提供本地 PostgreSQL 设计和初始化脚本，主要用于后续正式后端开发和数据库联调。
+
+当前 MVP 后台仍然使用：
+
+```text
+Backstage/data.json
+```
+
+正式上线前，需要把本地 JSON 数据迁移到真实数据库或微信云开发数据库。
+
+## 后续迁移方向
+
+- `Backstage/data.json` 迁移到云数据库或正式业务数据库；
+- base64 图片迁移到云存储；
+- `localhost` 接口迁移到 HTTPS 云函数或服务器接口；
+- 前端模拟权限迁移到后端真实登录和权限校验；
+- 本地演示后台逐步升级为正式运营后台。
+
+## 开发注意事项
+
+修改项目之前，先阅读：
+
+```text
+docs/PROJECT_LOG.md
+```
+
+每次做有意义的功能修改后，需要在该文件末尾补充更新记录，说明本次修改目标、修改内容、影响范围、验证情况和当前项目状态。
+
+当前项目不做线上支付能力。新功能不要依赖旧的 `payments` 表。
