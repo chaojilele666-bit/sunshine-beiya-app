@@ -33,7 +33,7 @@
       </view>
     </view>
 
-    <scroll-view class="type-scroll" scroll-x enable-flex>
+    <view class="type-scroll">
       <view class="type-row">
         <view
           wx:for="{{serviceTypes}}"
@@ -45,7 +45,7 @@
           {{item.name}}
         </view>
       </view>
-    </scroll-view>
+    </view>
 
     <view class="filter-bar">
       <view wx:for="{{filterTips}}" wx:key="*this" class="filter-item" bindtap="showFilter" data-name="{{item}}">{{item}}⌄</view>
@@ -55,7 +55,7 @@
       <view class="avatar" style="background: {{item.avatarColor}};">{{item.avatarText}}</view>
       <view class="content">
         <view class="topline">
-          <view>
+          <view class="ayi-title">
             <text class="name">{{item.name}}</text>
             <text class="role-tag">{{item.role}}</text>
           </view>
@@ -67,6 +67,9 @@
           <text class="price">¥{{item.salary}}</text>
           <text class="muted">{{item.schedule}}</text>
         </view>
+        <view class="card-actions">
+          <button class="detail-button" catchtap="goAyiDetail" data-id="{{item.id}}">查看详情</button>
+        </view>
       </view>
     </view>
 
@@ -77,11 +80,6 @@
   </view>
 
   <view wx:if="{{isAyi}}">
-    <view class="work-head">
-      <view class="work-tile" bindtap="goProfile">加入阳光北亚</view>
-      <view class="work-tile" bindtap="goCerts">实名认证</view>
-    </view>
-
     <view class="hero">
       <view class="eyebrow">找工作</view>
       <view class="title">今日工作机会</view>
@@ -92,7 +90,12 @@
       </view>
     </view>
 
-    <scroll-view class="type-scroll" scroll-x enable-flex>
+    <view class="work-head">
+      <view class="work-tile" bindtap="goProfile">加入阳光北亚</view>
+      <view class="work-tile" bindtap="goCerts">实名认证</view>
+    </view>
+
+    <view class="type-scroll">
       <view class="type-row">
         <view
           wx:for="{{serviceTypes}}"
@@ -104,25 +107,38 @@
           {{item.name}}
         </view>
       </view>
-    </scroll-view>
+    </view>
 
     <view wx:for="{{demands}}" wx:key="id" class="demand-card card">
       <view class="topline">
         <view class="name">{{item.serviceType}}</view>
         <view class="price">{{item.budget}}</view>
       </view>
-      <view class="muted">地址：{{item.city}} {{item.address}}</view>
-      <view class="muted">上户时间：{{item.startTime}}</view>
-      <view class="muted">状态：{{item.status}}</view>
+      <view class="job-info">
+        <view class="job-row">
+          <text class="job-label">地址</text>
+          <text class="job-text">{{item.city}} {{item.address}}</text>
+        </view>
+        <view class="job-row">
+          <text class="job-label">上户时间</text>
+          <text class="job-text">{{item.startTime}}</text>
+        </view>
+        <view class="job-row">
+          <text class="job-label">状态</text>
+          <text class="job-text">{{item.status}}</text>
+        </view>
+      </view>
       <view class="info">家庭情况：{{item.familyInfo}}</view>
-      <button
-        class="{{item.buttonClass}} apply-button"
-        disabled="{{item.disabled}}"
-        bindtap="applyDemand"
-        data-id="{{item.id}}"
-      >
-        {{item.buttonText}}
-      </button>
+      <view class="demand-actions">
+        <button
+          class="{{item.buttonClass}} apply-button"
+          disabled="{{item.disabled}}"
+          bindtap="applyDemand"
+          data-id="{{item.id}}"
+        >
+          {{item.buttonText}}
+        </button>
+      </view>
     </view>
 
     <view wx:if="{{noDemands}}" class="empty card">

@@ -1,57 +1,96 @@
 <view class="page mine-page">
   <view class="user card">
     <view class="user-avatar">{{avatarText}}</view>
-    <view>
+    <view class="user-main">
       <view class="user-name">{{pageTitle}}</view>
       <view class="muted">当前身份：{{roleText}}</view>
       <view class="muted">{{pageDesc}}</view>
     </view>
   </view>
 
-  <view class="tool-grid">
-    <view wx:if="{{noRole}}" class="tool card" bindtap="switchRole">
-      <view class="tool-title">选择身份</view>
-      <view class="muted">客户 / 阿姨</view>
+  <view wx:if="{{isAyi}}" class="profile-alert card">
+    <view>
+      <view class="alert-title">资料状态</view>
+      <view class="muted">资料越完整，越容易获得面试机会。</view>
     </view>
+    <view class="status-value">{{profileStatus}}</view>
+  </view>
 
-    <view wx:if="{{isCustomer}}" class="tool card" bindtap="goDemand">
+  <view class="section tools-section">
+    <view class="section-title">常用功能</view>
+    <view class="tool-list">
+      <view wx:if="{{noRole}}" class="tool card" bindtap="switchRole">
+        <view class="tool-icon purple">选</view>
+        <view class="tool-text">
+          <view class="tool-title">选择身份</view>
+          <view class="muted">客户 / 阿姨</view>
+        </view>
+      </view>
+
+      <view wx:if="{{isCustomer}}" class="tool card" bindtap="goDemand">
       <view class="tool-icon pink">需</view>
-      <view class="tool-title">发布需求</view>
-    </view>
-    <view wx:if="{{isCustomer}}" class="tool card" bindtap="goList">
+        <view class="tool-text">
+          <view class="tool-title">发布需求</view>
+          <view class="muted">填写家庭服务需求</view>
+        </view>
+      </view>
+      <view wx:if="{{isCustomer}}" class="tool card" bindtap="goList">
       <view class="tool-icon green">找</view>
-      <view class="tool-title">找阿姨</view>
-    </view>
+        <view class="tool-text">
+          <view class="tool-title">找阿姨</view>
+          <view class="muted">查看可预约阿姨</view>
+        </view>
+      </view>
 
-    <view wx:if="{{isAyi}}" class="tool card" bindtap="goProfile">
+      <view wx:if="{{isAyi}}" class="tool card" bindtap="goProfile">
       <view class="tool-icon pink">简</view>
-      <view class="tool-title">我的资料</view>
-    </view>
-    <view wx:if="{{isAyi}}" class="tool card" bindtap="goCerts">
+        <view class="tool-text">
+          <view class="tool-title">我的资料</view>
+          <view class="muted">经验、薪资、服务类型</view>
+        </view>
+      </view>
+      <view wx:if="{{isAyi}}" class="tool card" bindtap="goCerts">
       <view class="tool-icon green">证</view>
-      <view class="tool-title">我的证件</view>
-    </view>
-    <view wx:if="{{isAyi}}" class="tool card" bindtap="goHall">
+        <view class="tool-text">
+          <view class="tool-title">我的证件</view>
+          <view class="muted">身份证、健康证、技能证书</view>
+        </view>
+      </view>
+      <view wx:if="{{isAyi}}" class="tool card" bindtap="goHall">
       <view class="tool-icon blue">单</view>
-      <view class="tool-title">找工作</view>
-    </view>
-    <view wx:if="{{isAyi}}" class="tool card" bindtap="goApplications">
+        <view class="tool-text">
+          <view class="tool-title">找工作</view>
+          <view class="muted">查看客户需求</view>
+        </view>
+      </view>
+      <view wx:if="{{isAyi}}" class="tool card" bindtap="goApplications">
       <view class="tool-icon yellow">接</view>
-      <view class="tool-title">我的接单</view>
+        <view class="tool-text">
+          <view class="tool-title">我的接单</view>
+          <view class="muted">查看申请记录</view>
+        </view>
+      </view>
     </view>
+  </view>
 
-    <view class="tool card" bindtap="callService">
-      <view class="tool-icon cyan">客</view>
-      <view class="tool-title">联系客服</view>
+  <view class="assist-list card">
+    <view class="assist-row" bindtap="callService">
+      <view>
+        <view class="assist-title">联系客服</view>
+        <view class="muted">电话沟通服务问题</view>
+      </view>
+      <view class="assist-arrow">›</view>
     </view>
-    <view class="tool card" bindtap="switchRole">
-      <view class="tool-icon purple">换</view>
-      <view class="tool-title">切换身份</view>
+    <view class="assist-row" bindtap="switchRole">
+      <view>
+        <view class="assist-title">切换身份</view>
+        <view class="muted">客户 / 阿姨身份切换</view>
+      </view>
+      <view class="assist-arrow">›</view>
     </view>
   </view>
 
   <view wx:if="{{isCustomer}}" class="banner-card">服务顾问会根据地址、预算和家庭情况推荐合适阿姨</view>
-  <view wx:if="{{isAyi}}" class="banner-card">简历完整度越高，越容易获得客户面试机会</view>
 
   <view wx:if="{{isCustomer}}" class="section">
     <view class="section-title">我的需求</view>
@@ -89,14 +128,6 @@
       <view class="muted">面试时间：{{item.date}}</view>
       <view class="muted">地址：{{item.address}}</view>
       <view class="created">提交时间：{{item.createdAt}}</view>
-    </view>
-  </view>
-
-  <view wx:if="{{isAyi}}" class="section">
-    <view class="section-title">审核资料</view>
-    <view class="status-card card">
-      <view class="status-title">资料状态</view>
-      <view class="status-value">{{profileStatus}}</view>
     </view>
   </view>
 

@@ -1,16 +1,31 @@
 <view class="page">
   <view wx:if="{{noRole}}" class="role-page">
+    <view class="role-heading">选择身份</view>
+    <view class="role-subtitle">根据你的身份进入对应功能。</view>
+
     <view class="brand-card card">
       <view class="logo">阳光</view>
-      <view class="brand-name">北京阳光北亚家政</view>
-      <view class="brand-desc">请选择你的身份，进入对应的服务页面。</view>
+      <view class="brand-copy">
+        <view class="brand-name">北京阳光北亚家政</view>
+        <view class="brand-desc">家政、母婴、养老护理，一站式匹配服务。</view>
+      </view>
     </view>
 
-    <button class="role-button customer" bindtap="chooseCustomer">我是客户</button>
-    <view class="role-note">发布需求、找阿姨、预约面试、查看进度</view>
+    <view class="role-card card">
+      <view class="role-main">
+        <view class="role-title">客户入口</view>
+        <view class="role-desc">发布需求、找阿姨、预约面试、查看服务进度。</view>
+      </view>
+      <button class="role-button customer" bindtap="chooseCustomer">我是客户</button>
+    </view>
 
-    <button class="role-button ayi" bindtap="chooseAyi">我是阿姨</button>
-    <view class="role-note">完善资料、上传证件健康证、查看需求、申请接单</view>
+    <view class="role-card card">
+      <view class="role-main">
+        <view class="role-title">阿姨入口</view>
+        <view class="role-desc">完善资料、上传证件健康证、查看需求、申请接单。</view>
+      </view>
+      <button class="role-button ayi" bindtap="chooseAyi">我是阿姨</button>
+    </view>
   </view>
 
   <view wx:if="{{isCustomer}}" class="customer-page">

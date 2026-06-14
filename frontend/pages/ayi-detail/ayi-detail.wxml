@@ -12,28 +12,39 @@
   </view>
 
   <view class="section card block">
-    <view class="block-title">服务价格</view>
-    <view class="price">¥{{ayi.salary}}</view>
-    <view class="muted">{{ayi.schedule}}</view>
-  </view>
-
-  <view class="section card block">
     <view class="block-title">服务信息</view>
-    <view class="detail-line">是否住家：{{ayi.liveType}}</view>
-    <view class="detail-line">可服务区域：{{ayi.area}}</view>
-    <view class="detail-line">最近可约：{{ayi.available}}</view>
+    <view class="info-row">
+      <text class="info-label">期望薪资</text>
+      <text class="price">¥{{ayi.salary}}</text>
+    </view>
+    <view class="info-row">
+      <text class="info-label">可上户</text>
+      <text class="info-text">{{ayi.schedule}}</text>
+    </view>
+    <view class="info-row">
+      <text class="info-label">是否住家</text>
+      <text class="info-text">{{ayi.liveType}}</text>
+    </view>
+    <view class="info-row">
+      <text class="info-label">服务区域</text>
+      <text class="info-text">{{ayi.area}}</text>
+    </view>
+    <view class="info-row">
+      <text class="info-label">最近可约</text>
+      <text class="info-text">{{ayi.available}}</text>
+    </view>
   </view>
 
   <view class="section card block">
     <view class="block-title">擅长服务</view>
-    <view>
+    <view class="tag-list">
       <text wx:for="{{ayi.skills}}" wx:key="*this" class="tag">{{item}}</text>
     </view>
   </view>
 
   <view class="section card block">
     <view class="block-title">服务保障</view>
-    <view>
+    <view class="tag-list">
       <text wx:for="{{ayi.badges}}" wx:key="*this" class="tag">{{item}}</text>
     </view>
   </view>

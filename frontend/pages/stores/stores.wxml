@@ -7,19 +7,18 @@
     </view>
   </view>
 
-  <view class="district-grid">
-    <view
-      wx:for="{{districts}}"
-      wx:key="name"
-      class="district {{item.activeClass}}"
-      bindtap="chooseDistrict"
-      data-district="{{item.name}}"
-    >
-      {{item.name}}
+  <view class="filter-panel">
+    <view class="district-row">
+      <view
+        wx:for="{{districts}}"
+        wx:key="name"
+        class="district {{item.activeClass}}"
+        bindtap="chooseDistrict"
+        data-district="{{item.name}}"
+      >
+        {{item.name}}
+      </view>
     </view>
-  </view>
-
-  <view class="filter-row">
     <view class="stay-check {{stayClass}}" bindtap="toggleStay">
       <view class="box">{{stayMark}}</view>
       <text>可住宿</text>
@@ -40,11 +39,24 @@
     data-address="{{item.address}}"
     data-area="{{item.area}}"
   >
-    <view class="store-image" style="background: {{item.color}};">阳光</view>
+    <view class="store-header">
+      <view class="store-image" style="background: {{item.color}};">阳光</view>
+      <view class="store-title">
+        <view class="store-name">{{item.name}}</view>
+        <view class="store-district">{{item.district}}</view>
+      </view>
+      <view wx:if="{{item.canStay}}" class="stay-tag">可住宿</view>
+    </view>
+
     <view class="store-main">
-      <view class="store-name">{{item.name}}</view>
-      <view class="muted">{{item.address}}</view>
-      <view class="muted">覆盖：{{item.area}}</view>
+      <view class="store-line">
+        <text class="line-label">地址</text>
+        <text class="line-text">{{item.address}}</text>
+      </view>
+      <view class="store-line">
+        <text class="line-label">覆盖</text>
+        <text class="line-text">{{item.area}}</text>
+      </view>
       <view class="tag-row">
         <text wx:for="{{item.tags}}" wx:key="*this" class="store-tag">{{item}}</text>
       </view>
