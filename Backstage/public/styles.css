@@ -69,6 +69,21 @@ body.is-authed .login-view {
   margin-top: 26px;
 }
 
+.login-form {
+  display: grid;
+  gap: 14px;
+  max-width: 420px;
+  margin-top: 26px;
+}
+
+.login-form .field {
+  margin-top: 0;
+}
+
+.login-form button {
+  height: 44px;
+}
+
 .login-option {
   min-height: 170px;
   padding: 18px;

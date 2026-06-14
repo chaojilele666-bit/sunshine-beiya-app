@@ -1,5 +1,106 @@
 # Project Log
 
+## 2026-06-13 真实登录与后端权限系统
+
+### 修改前状态
+
+- 后台已经迁移到 PostgreSQL，主要资源 CRUD、人工派单、老板看板和 `audit_logs` 已可用。
+- 后台页面仍依赖前端角色选择进入系统，权限边界主要靠隐藏菜单，不是真实安全权限。
+- PostgreSQL 中已有 `customers`、`ayis`、`backstage_accounts`，但没有统一登录账号和 session 表。
+
+### 本次目标
+
+- 增加真实登录、session token、密码哈希和后端权限判断。
+- 支持 `customer`、`ayi`、`operator`、`boss` 四类角色。
+- 保持微信小程序页面不重写，保留 `/api/miniprogram` 匿名公开展示数据。
+- 不新增线上支付能力，不删除现有 PostgreSQL 数据，不提交真实测试密码。
+
+### 修改内容
+
+- 新增 `database/init/V003__auth_and_permissions.sql`：
+  - `user_accounts`
+  - `auth_sessions`
+  - 微信登录预留字段 `wechat_openid`、`wechat_unionid`
+- 新增 `Backstage/repositories/authRepository.js`：
+  - bcryptjs 密码校验和哈希
+  - 随机 token 生成
+  - token hash 入库
+  - session 过期
+  - 账号禁用检查
+  - 失败次数锁定
+  - 登录、登出、改密审计
+- 新增 `Backstage/accessControl.js`：
+  - 后端统一角色权限判断
+  - customer/ayi 个人数据范围过滤
+  - operator 禁止账号和老板看板权限
+  - boss 全量后台权限
+- 修改 `Backstage/server.js`：
+  - 新增 `/api/auth/login`
+  - 新增 `/api/auth/logout`
+  - 新增 `/api/auth/me`
+  - 新增 `/api/auth/change-password`
+  - 新增 boss-only `/api/auditLogs`
+  - 保护后台资源 CRUD，操作者身份从 token 解析
+- 修改 `Backstage/public/index.html` 和 `Backstage/public/app.js`：
+  - 停用前端模拟角色切换
+  - 增加真实账号密码登录
+  - token 失效后自动退出
+  - boss/operator 根据后端返回资源显示菜单
+- 新增 `Backstage/scripts/createTestAccounts.js`：
+  - 从环境变量创建本地测试账号
+  - 不在仓库写入真实密码
+- 更新 README、Backstage README、API 文档，并新增 `docs/AUTH_AND_PERMISSIONS.md`。
+
+### 实际执行
+
+```powershell
+docker run --rm -v "${PWD}\Backstage:/app" -w /app node:22-alpine npm install bcryptjs --save
+docker compose exec -T postgres psql -U sunshine_app -d sunshine_beiya -f /docker-entrypoint-initdb.d/V003__auth_and_permissions.sql
+$env:AUTH_TEST_PASSWORD='<local-only-password-at-least-8-chars>'
+node Backstage\scripts\createTestAccounts.js
+Remove-Item Env:\AUTH_TEST_PASSWORD
+node --check Backstage\server.js
+node --check Backstage\accessControl.js
+node --check Backstage\repositories\authRepository.js
+node --check Backstage\scripts\createTestAccounts.js
+node --check Backstage\public\app.js
+```
+
+### 测试结果
+
+- boss 登录成功。
+- operator 登录成功。
+- customer 登录成功。
+- ayi 登录成功。
+- 错误密码登录失败，返回 `401`。
+- 禁用账号登录失败，返回 `403`。
+- 未登录访问 `/api/accounts` 失败，返回 `401`。
+- customer 访问后台账号接口失败，返回 `403`。
+- customer 修改其他客户需求失败，返回 `403`。
+- ayi 修改其他阿姨资料失败，返回 `403`。
+- operator 创建/管理 boss 账号失败，返回 `403`。
+- boss 可访问经营看板和账号模块。
+- session 过期后 `/api/auth/me` 返回 `401`。
+- 登录、登出和关键资源操作写入 `audit_logs`。
+- Playwright UI 回归通过：
+  - 未登录只显示登录页。
+  - boss 显示经营看板、账号、业务模块、人工派单等全部菜单。
+  - operator 不显示经营看板和账号管理，显示业务模块。
+
+### 修改后状态
+
+- 当前开发分支为 `v1`，跟踪 `origin/v1`。
+- 本地和远程 `aaa` 分支已删除，删除前已确认 `aaa` 与 `origin/v1` 指向同一正式版本提交。
+- `.env` 和 `Backstage/node_modules/` 仍为 ignored。
+- 本次未执行 `git commit`、`git push` 或 GitHub 写操作。
+
+### 尚未完成
+
+- 未接微信正式登录，`wechat_openid` 和 `wechat_unionid` 仅预留。
+- 客户和阿姨小程序页面未改造为登录态页面。
+- 当前后台 token 存在 localStorage，生产上线前应评估 HTTPS、Cookie/CSRF 策略和更完整限流。
+- 仍未新增任何线上支付能力。
+
 ## 2026-06-13 提交前验收与清理
 
 ### 验收范围
@@ -42,7 +143,7 @@ docker compose restart postgres
 - 修复 Backstage 页面写入审计操作者时中文请求头导致浏览器 `fetch` 抛错的问题：
   - 前端将 `x-actor-name`、`x-actor-role` 使用 `encodeURIComponent` 编码。
   - 后端 `getActor()` 使用 `decodeURIComponent` 解码后写入 `audit_logs`。
-- 将 `docker-compose.yml` 中 PostgreSQL 默认密码占位值改为 `change_me_for_local_development`，与 `.env.example` 保持一致，避免提交像真实口令的本地默认值。
+- `.env.example` 只保留环境变量名称，不提交数据库密码、测试账号密码或完整连接串。
 
 ### 清理结果
 
@@ -313,7 +414,7 @@ GET 接口：
   - 增加 `node_modules/` 忽略规则。
   - 保留 `.env`、`.env.*` 忽略规则，并允许 `.env.example`。
 - 修改 `.env.example`：
-  - 增加 `DATABASE_URL=postgres://sunshine_app:change_me_for_local_development@localhost:5432/sunshine_beiya` 示例。
+  - 增加 `DATABASE_URL`、认证 session 和本地测试账号创建所需环境变量名称，具体密码和连接串只写入本地 `.env`。
 - 新增 `Backstage/package.json` 和 `Backstage/package-lock.json`：
   - 引入 `pg`，用于 PostgreSQL 连接池。
 - 新增 `Backstage/db.js`：

@@ -218,6 +218,8 @@ let currentRecord = null;
 let cache = [];
 let pendingImages = {};
 let currentUser = null;
+let authToken = null;
+let allowedResources = [];
 let expandedAccountRole = null;
 
 const list = document.querySelector('#list');
@@ -227,13 +229,13 @@ const layout = document.querySelector('.layout');
 const sectionTitle = document.querySelector('#sectionTitle');
 const sectionDesc = document.querySelector('#sectionDesc');
 const formTitle = document.querySelector('#formTitle');
-const loginOptions = document.querySelector('#loginOptions');
+const loginForm = document.querySelector('#loginForm');
 const loginTip = document.querySelector('#loginTip');
 const currentUserLabel = document.querySelector('#currentUser');
 
 const roleAccess = {
-  '老板端': ['dashboard', 'accounts', 'ayis', 'demands', 'appointments', 'applications', 'orders', 'orderDispatches', 'stores', 'serviceModules', 'banners'],
-  '运营端': ['ayis', 'demands', 'appointments', 'applications', 'orders', 'orderDispatches', 'stores', 'serviceModules', 'banners']
+  boss: ['dashboard', 'accounts', 'ayis', 'demands', 'appointments', 'applications', 'orders', 'orderDispatches', 'stores', 'serviceModules', 'banners'],
+  operator: ['ayis', 'demands', 'appointments', 'applications', 'orders', 'orderDispatches', 'stores', 'serviceModules', 'banners']
 };
 
 const accountGroups = [
@@ -302,37 +304,33 @@ async function api(path, options) {
   const headers = {
     'Content-Type': 'application/json'
   };
-  if (currentUser) {
-    headers['x-actor-name'] = encodeURIComponent(currentUser.name || currentUser.phone || '后台');
-    headers['x-actor-role'] = encodeURIComponent(currentUser.role || 'system');
+  if (authToken) {
+    headers.Authorization = `Bearer ${authToken}`;
   }
   const response = await fetch(`/api/${path}`, {
     headers,
     ...options
   });
   if (!response.ok) {
+    if (response.status === 401 && path !== 'auth/login') {
+      clearAuth('登录已过期，请重新登录。');
+    }
     throw new Error(await response.text());
   }
   return response.status === 204 ? null : response.json();
 }
 
-async function renderLogin() {
-  const accounts = await api('accounts');
-  const visibleAccounts = accounts
-    .filter((account) => account.status !== '停用')
-    .sort((a, b) => accountGroups.findIndex((group) => group.role === a.role) - accountGroups.findIndex((group) => group.role === b.role));
-
-  loginOptions.innerHTML = visibleAccounts.map((account) => `
-    <button class="login-option" data-id="${account.id}">
-      <div class="login-role">${escapeHtml(account.role)}</div>
-      <div class="record-title">${escapeHtml(account.name || `未命名账号 #${account.id}`)}</div>
-      <div class="login-entry">进入端口：${escapeHtml(account.entry)}</div>
-      <div class="login-entry">权限：${escapeHtml((account.permissions || []).slice(0, 3).join('、'))}</div>
-    </button>
-  `).join('');
+function clearAuth(message = '') {
+  currentUser = null;
+  authToken = null;
+  allowedResources = [];
+  localStorage.removeItem('ygby_auth_token');
+  document.body.classList.remove('is-authed');
+  loginTip.textContent = message;
 }
 
 function getAllowedResources() {
+  if (allowedResources.length) return allowedResources.filter((item) => resources[item]);
   if (!currentUser) return [];
   return roleAccess[currentUser.role] || [];
 }
@@ -344,24 +342,11 @@ function applyAuthShell() {
   }
 
   document.body.classList.add('is-authed');
-  currentUserLabel.textContent = `${currentUser.name} / ${currentUser.role}`;
+  currentUserLabel.textContent = `${currentUser.username || currentUser.phone} / ${currentUser.role}`;
   const allowed = getAllowedResources();
   document.querySelectorAll('.tab').forEach((tab) => {
     tab.hidden = !allowed.includes(tab.dataset.resource);
   });
-}
-
-async function enterAs(account) {
-  if (account.role === '客户端' || account.role === '阿姨端') {
-    loginTip.textContent = `${account.role} 不进入后台，请打开微信小程序 demo，在首页选择“${account.role === '客户端' ? '我是客户' : '我是阿姨'}”。`;
-    return;
-  }
-
-  currentUser = account;
-  localStorage.setItem('ygby_current_user', JSON.stringify(account));
-  applyAuthShell();
-  const firstResource = getAllowedResources()[0];
-  await loadResource(firstResource);
 }
 
 async function loadResource(resource = currentResource) {
@@ -605,19 +590,43 @@ document.querySelector('.tabs').addEventListener('click', (event) => {
 
 document.querySelector('#refreshBtn').addEventListener('click', () => loadResource());
 document.querySelector('#addBtn').addEventListener('click', () => openEditor());
-document.querySelector('#logoutBtn').addEventListener('click', () => {
-  currentUser = null;
-  localStorage.removeItem('ygby_current_user');
-  document.body.classList.remove('is-authed');
-  loginTip.textContent = '已退出，请重新选择身份。';
+document.querySelector('#logoutBtn').addEventListener('click', async () => {
+  try {
+    await api('auth/logout', { method: 'POST' });
+  } catch (error) {
+    // Local logout should still clear the browser state if the session already expired.
+  }
+  clearAuth('已退出，请重新登录。');
 });
 
-loginOptions.addEventListener('click', async (event) => {
-  const button = event.target.closest('.login-option');
-  if (!button) return;
-  const accounts = await api('accounts');
-  const account = accounts.find((item) => item.id === Number(button.dataset.id));
-  if (account) await enterAs(account);
+loginForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const formData = new FormData(loginForm);
+  loginTip.textContent = '';
+  try {
+    const result = await api('auth/login', {
+      method: 'POST',
+      body: JSON.stringify({
+        identifier: formData.get('identifier'),
+        password: formData.get('password')
+      })
+    });
+    authToken = result.token;
+    currentUser = result.user;
+    localStorage.setItem('ygby_auth_token', authToken);
+    const me = await api('auth/me');
+    currentUser = me.user;
+    allowedResources = me.allowedResources || [];
+    if (!me.canUseBackstage) {
+      clearAuth('该账号不能进入后台，请使用运营或老板账号。');
+      return;
+    }
+    loginForm.reset();
+    applyAuthShell();
+    await loadResource(getAllowedResources()[0]);
+  } catch (error) {
+    loginTip.textContent = '登录失败，请检查账号、密码或账号状态。';
+  }
 });
 
 list.addEventListener('click', async (event) => {
@@ -711,15 +720,23 @@ form.addEventListener('submit', async (event) => {
 });
 
 async function boot() {
-  await renderLogin();
-  try {
-    currentUser = JSON.parse(localStorage.getItem('ygby_current_user'));
-  } catch (error) {
-    currentUser = null;
+  authToken = localStorage.getItem('ygby_auth_token');
+  if (!authToken) {
+    clearAuth('');
+    return;
   }
-  applyAuthShell();
-  if (currentUser && roleAccess[currentUser.role]) {
+  try {
+    const me = await api('auth/me');
+    currentUser = me.user;
+    allowedResources = me.allowedResources || [];
+    if (!me.canUseBackstage) {
+      clearAuth('该账号不能进入后台，请使用运营或老板账号。');
+      return;
+    }
+    applyAuthShell();
     await loadResource(getAllowedResources()[0]);
+  } catch (error) {
+    clearAuth('登录已过期，请重新登录。');
   }
 }
 

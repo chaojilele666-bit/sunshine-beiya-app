@@ -12,9 +12,26 @@ http://localhost:5177/api
 
 Returns `ok: true` and `source: "postgres"` when PostgreSQL is reachable.
 
+## Auth
+
+- `POST /auth/login`
+- `POST /auth/logout`
+- `GET /auth/me`
+- `POST /auth/change-password`
+
+Login accepts `identifier` plus `password`. `identifier` may be a username or phone number.
+
+Protected requests must include:
+
+```text
+Authorization: Bearer <token>
+```
+
+Tokens expire according to `AUTH_SESSION_TTL_HOURS`. PostgreSQL stores only token hashes in `auth_sessions`.
+
 ## PostgreSQL CRUD Resources
 
-These resources support `GET`, `POST`, `PUT /:id`, and `DELETE /:id`:
+These resources support `GET`, `POST`, `PUT /:id`, and `DELETE /:id` when the authenticated role has permission:
 
 - `accounts`
 - `ayis`
@@ -29,12 +46,18 @@ These resources support `GET`, `POST`, `PUT /:id`, and `DELETE /:id`:
 
 All write operations use parameterized SQL through the repository layer and write to `audit_logs`.
 
-For browser-originated writes, Backstage can pass the simulated current operator through headers:
+Actor identity now comes from the session token. The old frontend-supplied actor headers are no longer trusted for normal authenticated writes.
 
-- `x-actor-name`
-- `x-actor-role`
+## Permissions
 
-Because HTTP header values must stay ASCII-safe in browsers, the frontend URL-encodes these values and the backend decodes them before writing `audit_logs`. This is audit context only. It is not a formal authentication or authorization mechanism.
+- `boss`: all backstage data, dashboard, accounts, and audit logs.
+- `operator`: business resources except accounts and boss-only dashboard/audit logs.
+- `customer`: own demands, appointments, and orders only.
+- `ayi`: own profile, applications, appointments, dispatches, orders, and open demands.
+
+`GET /miniprogram` remains a public display endpoint.
+
+`GET /auditLogs` is boss-only.
 
 ## Dashboard
 

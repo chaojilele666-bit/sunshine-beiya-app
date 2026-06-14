@@ -28,6 +28,23 @@
 
 `Backstage/data.json` 不删除，保留为历史演示数据备份和小程序临时只读兜底参考。正常情况下后台优先使用 PostgreSQL，不再把写入回落到 `data.json`。
 
+## 当前认证与权限
+
+后台已增加真实登录和后端权限判断。登录用户来自 PostgreSQL `user_accounts`，角色包括：
+
+- `customer`
+- `ayi`
+- `operator`
+- `boss`
+
+后台管理页面只允许 `operator` 和 `boss` 进入；`customer` 和 `ayi` 账号暂时预留给小程序登录接口。后端会根据 session token 判断权限，不能只依赖前端隐藏菜单。
+
+认证和权限说明见：
+
+```text
+docs/AUTH_AND_PERMISSIONS.md
+```
+
 ## 本地启动
 
 ```powershell
@@ -42,6 +59,17 @@ cd Backstage
 npm install
 node server.js
 ```
+
+创建本地测试账号：
+
+```powershell
+$env:AUTH_TEST_PASSWORD="<local-only-password-at-least-8-chars>"
+cd Backstage
+npm run auth:create-test-accounts
+Remove-Item Env:\AUTH_TEST_PASSWORD
+```
+
+不要把真实密码写入 `.env.example` 或提交到 Git。
 
 如果本机没有全局 `npm`，可以用 Docker 安装依赖：
 

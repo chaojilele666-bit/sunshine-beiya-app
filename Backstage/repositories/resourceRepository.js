@@ -252,6 +252,16 @@ async function list(resource, client = db) {
   return result.rows.map((row) => rowToResource(config, row));
 }
 
+async function listWhere(resource, filter = {}, client = db) {
+  const config = getConfig(resource);
+  const clause = filter.clause ? ` WHERE ${filter.clause}` : '';
+  const result = await client.query(
+    `${buildSelect(config)}${clause} ORDER BY ${config.orderBy}`,
+    filter.params || []
+  );
+  return result.rows.map((row) => rowToResource(config, row));
+}
+
 async function findById(resource, id, client = db) {
   const config = getConfig(resource);
   const result = await client.query(`${buildSelect(config)} WHERE id = $1`, [Number(id)]);
@@ -360,6 +370,7 @@ module.exports = {
   create,
   findById,
   list,
+  listWhere,
   remove,
   resourceConfigs,
   update,

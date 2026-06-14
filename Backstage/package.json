@@ -5,12 +5,14 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "migrate:data-json": "node scripts/migrateDataJsonToPostgres.js"
+    "migrate:data-json": "node scripts/migrateDataJsonToPostgres.js",
+    "auth:create-test-accounts": "node scripts/createTestAccounts.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "bcryptjs": "^3.0.3",
     "pg": "^8.21.0"
   }
 }

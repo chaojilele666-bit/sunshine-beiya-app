@@ -10,9 +10,19 @@
     <section id="loginView" class="login-view">
       <div class="login-card">
         <div class="login-brand">北京阳光北亚家政</div>
-        <h1>选择进入身份</h1>
-        <p>客户和阿姨进入微信小程序；运营和老板进入后台管理。</p>
-        <div id="loginOptions" class="login-options"></div>
+        <h1>后台登录</h1>
+        <p>运营和老板账号登录后台管理。客户和阿姨账号暂时预留给小程序登录接口。</p>
+        <form id="loginForm" class="login-form">
+          <div class="field">
+            <label>账号或手机号</label>
+            <input name="identifier" autocomplete="username" required />
+          </div>
+          <div class="field">
+            <label>密码</label>
+            <input name="password" type="password" autocomplete="current-password" required />
+          </div>
+          <button type="submit">登录</button>
+        </form>
         <div id="loginTip" class="login-tip"></div>
       </div>
     </section>

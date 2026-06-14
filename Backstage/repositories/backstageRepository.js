@@ -150,8 +150,12 @@ async function createDispatch(payload, actor) {
   });
 }
 
-async function listDispatches() {
-  const result = await db.query('SELECT * FROM order_dispatches ORDER BY created_at DESC, id DESC');
+async function listDispatches(filter = null) {
+  const clause = filter && filter.clause ? ` WHERE ${filter.clause}` : '';
+  const result = await db.query(
+    `SELECT * FROM order_dispatches${clause} ORDER BY created_at DESC, id DESC`,
+    filter ? (filter.params || []) : []
+  );
   return result.rows.map((row) => ({
     id: row.id,
     orderId: row.order_id,
@@ -167,9 +171,24 @@ async function listDispatches() {
   }));
 }
 
+async function listAuditLogs(limit = 100) {
+  const result = await db.query(
+    `SELECT id, actor, actor_role AS "actorRole", action, entity_type AS "entityType",
+            resource_type AS "resourceType", resource_id_text AS "resourceId",
+            before_summary AS "beforeSummary", after_summary AS "afterSummary",
+            created_at AS "createdAt"
+     FROM audit_logs
+     ORDER BY created_at DESC
+     LIMIT $1`,
+    [Number(limit) || 100]
+  );
+  return result.rows;
+}
+
 module.exports = {
   createDispatch,
   getDashboard,
   getMiniprogramData,
+  listAuditLogs,
   listDispatches
 };

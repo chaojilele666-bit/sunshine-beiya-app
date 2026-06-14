@@ -2,6 +2,8 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const db = require('./db');
+const accessControl = require('./accessControl');
+const authRepository = require('./repositories/authRepository');
 const backstageRepository = require('./repositories/backstageRepository');
 const resourceRepository = require('./repositories/resourceRepository');
 const serviceCatalogRepository = require('./repositories/serviceCatalogRepository');
@@ -10,6 +12,9 @@ const PORT = 5177;
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, 'public');
 const DATA_FILE = path.join(ROOT, 'data.json');
+const loginAttempts = new Map();
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_MAX_ATTEMPTS = 10;
 
 const contentTypes = {
   '.html': 'text/html; charset=utf-8',
@@ -31,7 +36,7 @@ function send(res, status, body, type = 'application/json; charset=utf-8') {
     'Content-Type': type,
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type'
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization'
   });
   if (Buffer.isBuffer(body) || typeof body === 'string') {
     res.end(body);
@@ -57,6 +62,54 @@ function readBody(req) {
         reject(error);
       }
     });
+  });
+}
+
+function getClientIp(req) {
+  return String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '')
+    .split(',')[0]
+    .trim()
+    .replace(/^::ffff:/, '');
+}
+
+function getBearerToken(req) {
+  const header = req.headers.authorization || '';
+  const match = String(header).match(/^Bearer\s+(.+)$/i);
+  return match ? match[1].trim() : null;
+}
+
+function checkLoginRateLimit(identifier, ipAddress) {
+  const key = `${ipAddress || 'unknown'}:${String(identifier || '').toLowerCase()}`;
+  const now = Date.now();
+  const current = loginAttempts.get(key) || { count: 0, resetAt: now + LOGIN_WINDOW_MS };
+  if (current.resetAt <= now) {
+    current.count = 0;
+    current.resetAt = now + LOGIN_WINDOW_MS;
+  }
+  current.count += 1;
+  loginAttempts.set(key, current);
+  if (current.count > LOGIN_MAX_ATTEMPTS) {
+    const error = new authRepository.AuthError('RATE_LIMITED', 'Too many login attempts. Try again later.', 429);
+    throw error;
+  }
+}
+
+function clearLoginRateLimit(identifier, ipAddress) {
+  const key = `${ipAddress || 'unknown'}:${String(identifier || '').toLowerCase()}`;
+  loginAttempts.delete(key);
+}
+
+async function getCurrentUser(req) {
+  const token = getBearerToken(req);
+  if (!token) return null;
+  return authRepository.getUserByToken(token);
+}
+
+function sendAuthError(res, error) {
+  send(res, error.status || 401, {
+    ok: false,
+    code: error.code || 'AUTH_ERROR',
+    error: error.message || 'Authentication failed'
   });
 }
 
@@ -127,11 +180,76 @@ function serveStatic(req, res) {
   send(res, 200, fs.readFileSync(filePath), contentTypes[ext] || 'text/plain; charset=utf-8');
 }
 
+async function handleAuth(req, res, parts, currentUser) {
+  const action = parts[2];
+  try {
+    if (action === 'login' && req.method === 'POST') {
+      const body = await readBody(req);
+      const ipAddress = getClientIp(req);
+      checkLoginRateLimit(body.identifier || body.username || body.phone, ipAddress);
+      const result = await authRepository.login({
+        identifier: body.identifier || body.username || body.phone,
+        password: body.password,
+        ipAddress,
+        userAgent: req.headers['user-agent'] || null
+      });
+      clearLoginRateLimit(body.identifier || body.username || body.phone, ipAddress);
+      send(res, 200, Object.assign({ ok: true }, result));
+      return;
+    }
+
+    if (action === 'logout' && req.method === 'POST') {
+      await authRepository.logout(getBearerToken(req), currentUser);
+      send(res, 200, { ok: true });
+      return;
+    }
+
+    if (action === 'me' && req.method === 'GET') {
+      if (!currentUser) {
+        send(res, 401, { ok: false, error: 'Login required' });
+        return;
+      }
+      send(res, 200, {
+        ok: true,
+        user: currentUser,
+        allowedResources: accessControl.allowedResourcesForRole(currentUser.role),
+        canUseBackstage: accessControl.canUseBackstage(currentUser)
+      });
+      return;
+    }
+
+    if (action === 'change-password' && req.method === 'POST') {
+      if (!currentUser) {
+        send(res, 401, { ok: false, error: 'Login required' });
+        return;
+      }
+      const body = await readBody(req);
+      const user = await authRepository.changePassword(currentUser, body.currentPassword, body.newPassword);
+      send(res, 200, { ok: true, user });
+      return;
+    }
+
+    send(res, 404, { error: 'Unknown auth endpoint' });
+  } catch (error) {
+    if (error instanceof authRepository.AuthError || error.code) {
+      sendAuthError(res, error);
+      return;
+    }
+    sendError(res, 500, 'Authentication failed');
+  }
+}
+
 async function handleApi(req, res) {
   const parts = req.url.split('?')[0].split('/').filter(Boolean);
   const resource = parts[1];
   const id = parts[2] ? Number(parts[2]) : null;
   const allowed = ['accounts', 'ayis', 'demands', 'appointments', 'applications', 'orders', 'stores', 'serviceModules', 'banners', 'orderDispatches'];
+  const currentUser = await getCurrentUser(req);
+
+  if (resource === 'auth') {
+    await handleAuth(req, res, parts, currentUser);
+    return;
+  }
 
   if (resource === 'health' && parts[2] === 'database' && req.method === 'GET') {
     try {
@@ -202,8 +320,27 @@ async function handleApi(req, res) {
   }
 
   if (resource === 'dashboard' && req.method === 'GET') {
+    const authz = accessControl.canAccessResource(currentUser, resource, req.method);
+    if (!authz.ok) {
+      send(res, authz.status, { ok: false, error: authz.message });
+      return;
+    }
     try {
       send(res, 200, await backstageRepository.getDashboard());
+    } catch (error) {
+      sendError(res, 503, 'Database unavailable', error.message);
+    }
+    return;
+  }
+
+  if (resource === 'auditLogs' && req.method === 'GET') {
+    const authz = accessControl.canAccessResource(currentUser, resource, req.method);
+    if (!authz.ok) {
+      send(res, authz.status, { ok: false, error: authz.message });
+      return;
+    }
+    try {
+      send(res, 200, await backstageRepository.listAuditLogs());
     } catch (error) {
       sendError(res, 503, 'Database unavailable', error.message);
     }
@@ -237,19 +374,35 @@ async function handleApi(req, res) {
   }
 
   if (resource === 'orderDispatches') {
+    const authz = accessControl.canAccessResource(currentUser, resource, req.method);
+    if (!authz.ok) {
+      send(res, authz.status, { ok: false, error: authz.message });
+      return;
+    }
     try {
       if (req.method === 'GET') {
-        send(res, 200, await backstageRepository.listDispatches());
+        send(res, 200, await backstageRepository.listDispatches(accessControl.listFilterForUser(currentUser, resource)));
         return;
       }
       if (req.method === 'POST') {
         const body = await readBody(req);
-        send(res, 201, await backstageRepository.createDispatch(body, getActor(req)));
+        const payload = accessControl.scopePayloadForCreate(currentUser, resource, body);
+        send(res, 201, await backstageRepository.createDispatch(payload, getActor(req, currentUser)));
         return;
       }
       if (req.method === 'PUT' && id) {
         const body = await readBody(req);
-        const record = await resourceRepository.update(resource, id, body, getActor(req));
+        const before = await resourceRepository.findById(resource, id);
+        if (!before) {
+          send(res, 404, { error: 'Record not found' });
+          return;
+        }
+        if (!accessControl.canAccessRecord(currentUser, resource, before)) {
+          send(res, 403, { ok: false, error: 'Permission denied' });
+          return;
+        }
+        const payload = accessControl.scopePayloadForUpdate(currentUser, resource, body);
+        const record = await resourceRepository.update(resource, id, payload, getActor(req, currentUser));
         if (!record) {
           send(res, 404, { error: 'Record not found' });
           return;
@@ -258,7 +411,16 @@ async function handleApi(req, res) {
         return;
       }
       if (req.method === 'DELETE' && id) {
-        const deleted = await resourceRepository.remove(resource, id, getActor(req));
+        const before = await resourceRepository.findById(resource, id);
+        if (!before) {
+          send(res, 404, { error: 'Record not found' });
+          return;
+        }
+        if (!accessControl.canAccessRecord(currentUser, resource, before)) {
+          send(res, 403, { ok: false, error: 'Permission denied' });
+          return;
+        }
+        const deleted = await resourceRepository.remove(resource, id, getActor(req, currentUser));
         if (!deleted) {
           send(res, 404, { error: 'Record not found' });
           return;
@@ -278,9 +440,29 @@ async function handleApi(req, res) {
     return;
   }
 
+  const authz = accessControl.canAccessResource(currentUser, resource, req.method);
+  if (!authz.ok) {
+    send(res, authz.status, { ok: false, error: authz.message });
+    return;
+  }
+
   if (req.method === 'GET') {
     try {
-      send(res, 200, id ? await resourceRepository.findById(resource, id) : await resourceRepository.list(resource));
+      if (id) {
+        const record = await resourceRepository.findById(resource, id);
+        if (!record) {
+          send(res, 404, { error: 'Record not found' });
+          return;
+        }
+        if (!accessControl.canAccessRecord(currentUser, resource, record)) {
+          send(res, 403, { ok: false, error: 'Permission denied' });
+          return;
+        }
+        send(res, 200, record);
+        return;
+      }
+      const filter = accessControl.listFilterForUser(currentUser, resource);
+      send(res, 200, filter ? await resourceRepository.listWhere(resource, filter) : await resourceRepository.list(resource));
     } catch (error) {
       sendError(res, 503, 'Database unavailable', error.message);
     }
@@ -290,9 +472,10 @@ async function handleApi(req, res) {
   if (req.method === 'POST') {
     try {
       const body = await readBody(req);
-      send(res, 201, await resourceRepository.create(resource, body, getActor(req)));
+      const payload = accessControl.scopePayloadForCreate(currentUser, resource, body);
+      send(res, 201, await resourceRepository.create(resource, payload, getActor(req, currentUser)));
     } catch (error) {
-      sendError(res, 400, 'Create failed', error.message);
+      sendError(res, error.status || 400, 'Create failed', error.message);
     }
     return;
   }
@@ -300,21 +483,40 @@ async function handleApi(req, res) {
   if (req.method === 'PUT' && id) {
     try {
       const body = await readBody(req);
-      const record = await resourceRepository.update(resource, id, body, getActor(req));
+      const before = await resourceRepository.findById(resource, id);
+      if (!before) {
+        send(res, 404, { error: 'Record not found' });
+        return;
+      }
+      if (!accessControl.canAccessRecord(currentUser, resource, before)) {
+        send(res, 403, { ok: false, error: 'Permission denied' });
+        return;
+      }
+      const payload = accessControl.scopePayloadForUpdate(currentUser, resource, body);
+      const record = await resourceRepository.update(resource, id, payload, getActor(req, currentUser));
       if (!record) {
         send(res, 404, { error: 'Record not found' });
         return;
       }
       send(res, 200, record);
     } catch (error) {
-      sendError(res, 400, 'Update failed', error.message);
+      sendError(res, error.status || 400, 'Update failed', error.message);
     }
     return;
   }
 
   if (req.method === 'DELETE' && id) {
     try {
-      const deleted = await resourceRepository.remove(resource, id, getActor(req));
+      const before = await resourceRepository.findById(resource, id);
+      if (!before) {
+        send(res, 404, { error: 'Record not found' });
+        return;
+      }
+      if (!accessControl.canAccessRecord(currentUser, resource, before)) {
+        send(res, 403, { ok: false, error: 'Permission denied' });
+        return;
+      }
+      const deleted = await resourceRepository.remove(resource, id, getActor(req, currentUser));
       if (!deleted) {
         send(res, 404, { error: 'Record not found' });
         return;
@@ -362,7 +564,13 @@ function sendError(res, status, message, detail) {
   });
 }
 
-function getActor(req) {
+function getActor(req, user) {
+  if (user) {
+    return {
+      name: user.username || user.phone || `user:${user.id}`,
+      role: user.role
+    };
+  }
   const decodeHeader = (value, fallback) => {
     if (!value) return fallback;
     try {
