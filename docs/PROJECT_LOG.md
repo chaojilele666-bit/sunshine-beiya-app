@@ -759,3 +759,224 @@ values (
   - 服务页客户态/阿姨态列表、详情跳转和接单申请。
   - 阿姨详情页资料展示和预约跳转。
   - “我的”页面客户态/阿姨态入口、记录模块和绿色按钮文字居中。
+
+
+## 2026-06-14 小程序门店详情页实现
+
+### 修改目标
+
+- 修复门店列表点击门店卡片只弹出地址提示、无法进入详情页的问题。
+- 新增客户端和阿姨端共用的门店详情页，展示门店介绍、店长、团队、推荐阿姨和联系信息。
+
+### 根本原因
+
+- `frontend/pages/stores/stores.wxml` 中门店卡片绑定 `bindtap="showStore"`。
+- `frontend/pages/stores/stores.js` 的 `showStore()` 只调用 `wx.showModal()`。
+- `frontend/app.json` 没有注册门店详情页。
+- 门店和阿姨数据缺少详情页需要的门店介绍、团队、店长和门店推荐阿姨关联字段。
+
+### 修改文件
+
+- `frontend/app.json`
+- `frontend/pages/stores/stores.wxml`
+- `frontend/pages/stores/stores.js`
+- `frontend/pages/stores/stores.wxss`
+- `frontend/pages/store-detail/store-detail.js`
+- `frontend/pages/store-detail/store-detail.wxml`
+- `frontend/pages/store-detail/store-detail.wxss`
+- `frontend/pages/store-detail/store-detail.json`
+- `frontend/data/stores.js`
+- `frontend/data/ayis.js`
+- `Backstage/data.json`
+- `Backstage/public/app.js`
+- `Backstage/repositories/resourceRepository.js`
+- `Backstage/scripts/migrateDataJsonToPostgres.js`
+- `database/init/V004__store_detail_fields.sql`
+- `docs/PROJECT_LOG.md`
+
+### 新增字段
+
+门店：
+
+- `intro`
+- `businessHours`
+- `managerName`
+- `managerTitle`
+- `managerImage`
+- `managerIntro`
+- `staffCount`
+- `consultantCount`
+- `ayiCount`
+- `teamIntro`
+- `latitude`
+- `longitude`
+
+阿姨：
+
+- `storeId`
+- `featured`
+- `featuredTitle`
+
+### 页面交互
+
+- 点击门店卡片主体或门店名称进入 `/pages/store-detail/store-detail?id=门店ID`。
+- 门店卡片“导航”和“电话”继续使用 `catchtap`，不会冒泡触发详情页跳转。
+- 详情页“导航”在有经纬度时调用 `wx.openLocation()`；无坐标时显示友好提示。
+- 详情页“拨打电话”调用 `wx.makePhoneCall()`。
+- 详情页推荐阿姨卡片跳转现有 `/pages/ayi-detail/ayi-detail?id=阿姨ID`。
+
+### 验证结果
+
+- 已将 `database/init/V004__store_detail_fields.sql` 应用到本地 PostgreSQL。
+- 已重启本地 Backstage，使资源字段映射生效。
+- 已验证 `GET http://localhost:5177/api/miniprogram` 返回：
+  - `source=postgres`
+  - 东城安定门服务点包含 `intro`、`businessHours`、`managerName` 等详情字段。
+  - 东城门店团队规模为员工 12 人、顾问 4 人、储备阿姨 80 人。
+  - 东城门店服务范围为家政、母婴、养老、保洁。
+  - 东城门店返回王阿姨、李阿姨、张阿姨 3 名 `storeId=1` 且 `status=已认证` 的金牌阿姨。
+- 已执行静态检查，等待微信开发者工具中进行页面点击和渲染验收。
+
+### 当前限制
+
+- 当前图片仍可使用本地 MVP 的 base64 data URL 或空图片占位，本次不迁移云存储。
+- `localhost:5177` 仅适用于微信开发者工具和本地开发环境；正式部署需要替换为 HTTPS 后端地址。
+- 店长、团队和推荐阿姨数据为演示数据，不是真实个人敏感信息。
+
+
+## 2026-06-14 门店图片后台到小程序联调
+
+### 测试目的
+
+验证后台门店图片通过现有接口保存后，能够经由 `GET /api/stores` 和 `GET /api/miniprogram` 同步到微信小程序门店列表与门店详情页。本次只做本地联调，不提交、不推送、不接入云存储。
+
+### 临时图片生成方式
+
+- 使用 Python Pillow 在本地生成 PNG 测试图，路径为 `Backstage/test-assets/stores/`。
+- 图片尺寸为 640x360，单张约 15KB 到 18KB。
+- 图片内容为门店门头/接待区风格占位图，并明确标记 `TEMP TEST IMAGE`，不包含真实证件照、身份证、真实个人正脸或敏感信息。
+- 正式上线前需要替换为正式门店图片，并迁移到云存储或正式文件服务。
+
+### 后台保存方式
+
+- 通过后台登录接口获取本地测试 token。
+- 使用现有 `PUT /api/stores/:id` 更新东城安定门服务点图片。
+- 当前 PostgreSQL 中原本只有东城门店，因此通过现有 `POST /api/stores` 创建了朝阳服务联络点和海淀服务联络点两条演示门店，并分别写入不同 data URL 图片。
+- 测试中曾因 PowerShell 管道编码导致 3 条名称为问号的临时门店被创建，已立即通过后台接口删除，未保留在最终数据中。
+
+### 接口验证结果
+
+- `GET /api/stores` 已返回三家测试门店的 `image` 字段，均为合法 `data:image/png;base64,...`。
+- `GET /api/miniprogram` 返回 `source=postgres`，并返回与 `/api/stores` 完全一致的图片哈希。
+- 已验证 `visible=false` 的临时门店不会出现在 `/api/miniprogram`，并已删除该临时门店。
+- 已重启 Backstage 后再次请求接口，图片数据仍可读取，说明数据已持久化到 PostgreSQL。
+
+### 门店列表与详情验证
+
+- `frontend/app.js` 的 `normalizeStore()` 保留 `image` 字段。
+- `frontend/pages/stores/stores.wxml` 已调整为：有 `item.image` 时使用原生 `<image mode="aspectFill">`；无图片时显示“阳光”占位块。
+- `frontend/pages/store-detail/store-detail.wxml` 使用 `store.image` 渲染门店大图；无图片时显示“阳光”占位块。
+- 门店卡片点击仍进入 `/pages/store-detail/store-detail?id=门店ID`。
+- 导航和电话按钮继续使用 `catchtap`，避免冒泡进入详情页。
+
+### 图片更新测试
+
+- 将“东城安定门服务点”从 `store-1.png` 替换为 `store-1-update.png` 后，东城门店图片哈希发生变化。
+- 朝阳服务联络点和海淀服务联络点图片哈希保持不变。
+- `/api/stores` 和 `/api/miniprogram` 最终哈希一致。
+
+### 本地兜底测试
+
+- `frontend/data/stores.js` 已写入三家门店的临时测试图片，后台未启动时小程序本地兜底数据仍可显示图片。
+- `Backstage/data.json` 已补充三家演示门店图片，作为旧 JSON MVP 备份数据。
+- 当前正常后台仍优先使用 PostgreSQL，`data.json` 仅作为备份和临时兜底。
+
+### 未完成的人工验证
+
+- 尚未在微信开发者工具中实际查看门店列表图片、门店详情图片、导航按钮和电话按钮的视觉与点击效果。
+- 尚未在真机上验证 base64 data URL 图片渲染性能。
+- `localhost:5177` 仅适用于本地开发者工具，正式部署需要 HTTPS 后端和正式图片存储。
+
+
+## 2026-06-14 门店上传图片刷新问题修复
+
+### 问题现象
+
+后台重新上传门店照片后，后台页面预览已变化，但微信小程序门店列表和门店详情页仍显示旧图或不变化。
+
+### 分层诊断结果
+
+- 后台表单会把上传图片作为 `image` 字段提交到 `PUT /api/stores/:id`。
+- 后端 `stores.image` 字段映射存在，PostgreSQL 中东城安定门服务点图片已更新为用户实际上传图片。
+- `GET /api/stores` 和 `GET /api/miniprogram` 都返回同一张图片，用户上传图片内容 SHA256 前 12 位为 `85fbcf3f5cba`。
+- 小程序接口返回 `source=postgres`，不是本地兜底数据。
+- 根因不是保存失败，也不是 `/api/miniprogram` 丢字段，而是继续把超长 base64 data URL 作为微信 `<image>` 的 `src`，在开发者工具中刷新和渲染不稳定；同时门店列表和详情页存在先读取旧数据再异步刷新后台数据的时序问题。
+
+### 修复内容
+
+- `Backstage/server.js`
+  - 新增门店图片 data URL 落盘逻辑。
+  - 后台收到 `data:image/...;base64,...` 时保存到 `Backstage/public/uploads/stores/`。
+  - PostgreSQL `stores.image` 保存相对路径 `/uploads/stores/...`。
+  - `GET /api/stores` 和 `GET /api/miniprogram` 返回完整本地 URL，例如 `http://localhost:5177/uploads/stores/...png`。
+  - 为上传图片增加 PNG/JPEG/WebP/GIF 静态文件 Content-Type。
+  - 每次上传生成唯一文件名，避免微信图片缓存复用旧 URL。
+- `frontend/app.js`
+  - `loadBackendData()` 输出开发阶段门店数据来源日志：`source`、数量、图片类型和长度，不输出完整图片内容。
+  - 请求失败时明确输出本地兜底原因。
+- `frontend/pages/stores/stores.js`
+  - `onShow` 改为等待 `app.loadBackendData()` 完成后再刷新门店列表。
+  - 增加门店图片加载失败日志和占位回退。
+- `frontend/pages/stores/stores.wxml`
+  - 门店图片增加 `binderror`，错误时可回退到“阳光”占位。
+- `frontend/pages/store-detail/store-detail.js`
+  - `onLoad` 只保存门店 ID，`onShow` 每次重新拉取后台数据。
+  - 增加门店详情图片加载失败日志和占位回退。
+- `frontend/pages/store-detail/store-detail.wxml`
+  - 门店大图增加 `binderror`，错误时回退到占位。
+
+### 验证结果
+
+- 已使用当前 PostgreSQL 中用户实际上传的东城门店图片，经正常 `PUT /api/stores/1` 触发转换，未直接修改数据库。
+- 转换前：东城 `image` 为 data URL，内容 SHA256 前 12 位 `85fbcf3f5cba`。
+- 转换后：PostgreSQL `stores.image` 为 `/uploads/stores/...png` 相对 URL。
+- `GET /api/stores` 返回完整 URL，图片文件可访问，Content-Type 为 `image/png`。
+- `GET /api/miniprogram` 返回同一完整 URL。
+- 通过 URL 读取到的东城图片文件内容 SHA256 前 12 位仍为 `85fbcf3f5cba`，说明用户上传图片没有丢失。
+- 已确认小程序接口返回 `source=postgres`。
+
+### 当前限制
+
+- 本地 MVP 阶段图片 URL 使用 `http://localhost:5177/uploads/...`，仅适用于微信开发者工具本地联调。
+- 正式上线前需要迁移到 HTTPS 文件服务、云存储或微信云开发存储。
+- 尚未在微信开发者工具中再次人工确认 `<image>` 是否触发 `binderror`，需要用户重新打开门店列表和门店详情查看。
+
+## 2026-06-23 本地 HTTP 图片兼容修复
+
+### 修改目标
+
+- 修复微信基础库 3.16.0 不允许 `<image>` 直接显示 `http://localhost:5177/uploads/...` 图片的问题。
+- 保持 PostgreSQL 图片字段和接口返回 URL 不变，仅在小程序本地开发显示层做转换。
+
+### 修改内容
+
+- `frontend/app.js` 新增 `resolveImageForDisplay(imageUrl, options)`。
+- 本地 `http://localhost:5177/` 和 `http://127.0.0.1:5177/` 图片通过 `wx.request({ responseType: 'arraybuffer' })` 获取二进制。
+- 使用 `wx.getFileSystemManager().writeFile()` 写入 `wx.env.USER_DATA_PATH`。
+- 使用完整 URL 生成稳定 hash 文件名，并维护内存缓存，避免同一 URL 重复请求。
+- HTTPS、`wxfile://`、`file://`、`http://tmp/` 和本地路径直接返回，保持正式上线兼容。
+- 门店列表使用 `item.displayImage` 渲染图片。
+- 门店详情使用 `store.displayImage` 渲染门店大图，并使用 `store.managerDisplayImage` 渲染店长图片。
+
+### 验证结果
+
+- 微信开发者工具人工验证已通过：`source=postgres`、`backendReady=true`。
+- 本地 HTTP 门店图片已成功转换成本地文件并显示。
+- 门店列表和详情图片正常。
+- 电话、导航和详情跳转正常。
+- 不再出现 HTTP 图片协议错误。
+
+### 当前限制
+
+- 该转换逻辑仅用于本地 localhost/127.0.0.1 开发调试。
+- 正式上线仍应使用 HTTPS 图片地址或云存储地址。

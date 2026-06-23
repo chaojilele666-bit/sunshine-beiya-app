@@ -1,4 +1,4 @@
-{
+﻿{
   "accounts": [
     {
       "id": 1,
@@ -107,7 +107,91 @@
       "idCardImage": "",
       "healthCertImage": "",
       "skillCertImage": "",
-      "intro": "性格耐心，擅长 0-3 岁宝宝照护。"
+      "intro": "性格耐心，擅长 0-3 岁宝宝照护。",
+      "storeId": 1,
+      "featured": true,
+      "featuredTitle": "金牌育儿嫂"
+    },
+    {
+      "id": 3,
+      "image": "",
+      "name": "周阿姨",
+      "phone": "13900000901",
+      "source": "后台录入",
+      "age": 50,
+      "hometown": "河北邯郸",
+      "serviceType": "住家保姆",
+      "experience": 12,
+      "liveType": "住家",
+      "salary": "8000-10500/月",
+      "availableTime": "两天内可面试",
+      "skills": [
+        "家庭餐",
+        "日常家务",
+        "老人陪伴"
+      ],
+      "status": "已认证",
+      "idCardImage": "",
+      "healthCertImage": "",
+      "skillCertImage": "",
+      "intro": "演示数据：长期服务稳定，擅长家常餐、日常家务和老人陪伴。",
+      "storeId": 1,
+      "featured": true,
+      "featuredTitle": "明星住家保姆"
+    },
+    {
+      "id": 4,
+      "image": "",
+      "name": "李阿姨",
+      "phone": "13900000902",
+      "source": "后台录入",
+      "age": 48,
+      "hometown": "河南信阳",
+      "serviceType": "住家保姆",
+      "experience": 10,
+      "liveType": "住家",
+      "salary": "7800-9800/月",
+      "availableTime": "本周可上户",
+      "skills": [
+        "家庭餐",
+        "收纳整理",
+        "老人陪护"
+      ],
+      "status": "已认证",
+      "idCardImage": "",
+      "healthCertImage": "",
+      "skillCertImage": "",
+      "intro": "演示数据：做饭好，收纳利落，适合长期住家服务。",
+      "storeId": 1,
+      "featured": true,
+      "featuredTitle": "金牌住家保姆"
+    },
+    {
+      "id": 5,
+      "image": "",
+      "name": "张阿姨",
+      "phone": "13900000903",
+      "source": "后台录入",
+      "age": 45,
+      "hometown": "山东临沂",
+      "serviceType": "月嫂",
+      "experience": 9,
+      "liveType": "住家",
+      "salary": "15800-19800/月",
+      "availableTime": "需提前预约",
+      "skills": [
+        "产妇护理",
+        "新生儿护理",
+        "月子餐"
+      ],
+      "status": "已认证",
+      "idCardImage": "",
+      "healthCertImage": "",
+      "skillCertImage": "",
+      "intro": "演示数据：月子餐搭配细致，新生儿护理经验丰富。",
+      "storeId": 1,
+      "featured": true,
+      "featuredTitle": "明星月嫂"
     }
   ],
   "demands": [
@@ -193,7 +277,6 @@
   "stores": [
     {
       "id": 1,
-      "image": "",
       "name": "东城安定门服务点",
       "district": "东城区",
       "address": "北京市东城区安定门外东河沿乙六号楼三层",
@@ -201,10 +284,81 @@
       "area": "东城、西城、朝阳",
       "tags": [
         "家政",
-        "母婴养老"
+        "母婴",
+        "养老",
+        "保洁"
       ],
       "canStay": true,
-      "visible": true
+      "visible": true,
+      "image": "",
+      "intro": "演示数据：东城安定门服务点面向东城、西城和朝阳家庭，提供家政、母婴、养老护理和住家服务咨询。",
+      "businessHours": "09:00-18:00",
+      "managerName": "杨店长",
+      "managerTitle": "门店负责人",
+      "managerImage": "",
+      "managerIntro": "演示数据：负责门店日常咨询、阿姨资料审核和客户服务跟进。",
+      "staffCount": 12,
+      "consultantCount": 4,
+      "ayiCount": 80,
+      "teamIntro": "演示数据：团队由服务顾问、资料审核和客户跟进人员组成，重点服务东城及周边家庭。",
+      "latitude": 39.949,
+      "longitude": 116.408
+    },
+    {
+      "id": 2,
+      "image": "",
+      "name": "朝阳服务联络点",
+      "district": "朝阳区",
+      "address": "演示地址：朝阳区重点服务区域",
+      "area": "朝阳、通州、顺义",
+      "tags": [
+        "育儿嫂",
+        "小时工"
+      ],
+      "phone": "18611607087",
+      "canStay": false,
+      "visible": true,
+      "intro": "临时联调演示数据：朝阳服务联络点覆盖朝阳及周边家庭服务需求。",
+      "businessHours": "09:00-18:00",
+      "managerName": "演示店长",
+      "managerTitle": "门店负责人",
+      "managerImage": "",
+      "managerIntro": "临时联调演示数据：负责朝阳服务联络点的咨询和派单协同。",
+      "staffCount": 8,
+      "consultantCount": 3,
+      "ayiCount": 45,
+      "teamIntro": "临时联调演示数据：朝阳团队服务母婴照护、小时工和家庭保洁需求。",
+      "latitude": null,
+      "longitude": null,
+      "color": "#f8e7d6"
+    },
+    {
+      "id": 3,
+      "image": "",
+      "name": "海淀服务联络点",
+      "district": "海淀区",
+      "address": "演示地址：海淀区重点服务区域",
+      "area": "海淀、昌平、石景山",
+      "tags": [
+        "月嫂",
+        "育儿嫂"
+      ],
+      "phone": "18611607087",
+      "canStay": false,
+      "visible": true,
+      "intro": "临时联调演示数据：海淀服务联络点重点提供母婴和家庭照护服务。",
+      "businessHours": "09:00-18:00",
+      "managerName": "演示店长",
+      "managerTitle": "服务顾问主管",
+      "managerImage": "",
+      "managerIntro": "临时联调演示数据：负责海淀联络点客户接待和阿姨资料审核。",
+      "staffCount": 7,
+      "consultantCount": 2,
+      "ayiCount": 38,
+      "teamIntro": "临时联调演示数据：海淀团队面向海淀、昌平等区域提供家庭服务。",
+      "latitude": null,
+      "longitude": null,
+      "color": "#e7edff"
     }
   ],
   "serviceModules": [
