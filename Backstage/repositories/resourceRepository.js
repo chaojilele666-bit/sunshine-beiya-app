@@ -32,6 +32,9 @@ const resourceConfigs = {
       salary: 'salary',
       availableTime: 'available_time',
       skills: 'skills',
+      storeId: 'store_id',
+      featured: 'featured',
+      featuredTitle: 'featured_title',
       status: 'status',
       idCardImage: 'id_card_image',
       healthCertImage: 'health_cert_image',
@@ -39,7 +42,7 @@ const resourceConfigs = {
       intro: 'intro',
       visible: 'visible'
     },
-    defaults: { source: '后台录入', skills: [], status: '待审核', visible: true },
+    defaults: { source: '后台录入', skills: [], status: '待审核', visible: true, featured: false },
     orderBy: 'updated_at DESC, id DESC'
   },
   demands: {
@@ -131,7 +134,19 @@ const resourceConfigs = {
       area: 'area',
       tags: 'tags',
       canStay: 'can_stay',
-      visible: 'visible'
+      visible: 'visible',
+      intro: 'intro',
+      businessHours: 'business_hours',
+      managerName: 'manager_name',
+      managerTitle: 'manager_title',
+      managerImage: 'manager_image',
+      managerIntro: 'manager_intro',
+      staffCount: 'staff_count',
+      consultantCount: 'consultant_count',
+      ayiCount: 'ayi_count',
+      teamIntro: 'team_intro',
+      latitude: 'latitude',
+      longitude: 'longitude'
     },
     defaults: { tags: [], canStay: false, visible: true },
     orderBy: 'id ASC'
@@ -205,8 +220,8 @@ function toNumber(value) {
 
 function normalizeValue(key, value) {
   if (['permissions', 'skills', 'tags'].includes(key)) return toArray(value);
-  if (['visible', 'canStay'].includes(key)) return toBoolean(value);
-  if (['age', 'experience', 'sort', 'demandId', 'orderId'].includes(key)) return toNumber(value);
+  if (['visible', 'canStay', 'featured'].includes(key)) return toBoolean(value);
+  if (['age', 'experience', 'sort', 'demandId', 'orderId', 'storeId', 'staffCount', 'consultantCount', 'ayiCount', 'latitude', 'longitude'].includes(key)) return toNumber(value);
   return value === undefined ? null : value;
 }
 

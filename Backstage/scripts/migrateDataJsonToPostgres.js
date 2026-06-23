@@ -23,8 +23,8 @@ function toNumber(value) {
 
 function normalizeValue(key, value) {
   if (['permissions', 'skills', 'tags'].includes(key)) return toArray(value);
-  if (['visible', 'canStay'].includes(key)) return toBoolean(value);
-  if (['age', 'experience', 'sort', 'demandId'].includes(key)) return toNumber(value);
+  if (['visible', 'canStay', 'featured'].includes(key)) return toBoolean(value);
+  if (['age', 'experience', 'sort', 'demandId', 'orderId', 'storeId', 'staffCount', 'consultantCount', 'ayiCount', 'latitude', 'longitude'].includes(key)) return toNumber(value);
   return value === undefined ? null : value;
 }
 

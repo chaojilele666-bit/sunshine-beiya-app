@@ -147,6 +147,14 @@ activemq-data/
 # Node
 node_modules/
 
+# Local mini program settings
+frontend/project.private.config.json
+
+# Runtime uploads and test assets
+Backstage/test-assets/
+Backstage/public/uploads/*
+!Backstage/public/uploads/.gitkeep
+
 # SageMath parsed files
 *.sage.py
 

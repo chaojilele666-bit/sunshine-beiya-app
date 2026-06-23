@@ -126,6 +126,18 @@
   font-weight: 800;
 }
 
+.store-image-photo {
+  display: block;
+  line-height: normal;
+}
+
+.store-image-placeholder {
+  line-height: 110rpx;
+  color: #1f8a70;
+  text-align: center;
+  font-weight: 800;
+}
+
 .store-title {
   min-width: 0;
   flex: 1;

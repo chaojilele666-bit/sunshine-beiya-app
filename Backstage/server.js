@@ -12,6 +12,7 @@ const PORT = 5177;
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, 'public');
 const DATA_FILE = path.join(ROOT, 'data.json');
+const STORE_UPLOAD_DIR = path.join(PUBLIC_DIR, 'uploads', 'stores');
 const loginAttempts = new Map();
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_MAX_ATTEMPTS = 10;
@@ -20,7 +21,12 @@ const contentTypes = {
   '.html': 'text/html; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.js': 'application/javascript; charset=utf-8',
-  '.json': 'application/json; charset=utf-8'
+  '.json': 'application/json; charset=utf-8',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif'
 };
 
 function readData() {
@@ -62,6 +68,94 @@ function readBody(req) {
         reject(error);
       }
     });
+  });
+}
+
+function getRequestOrigin(req) {
+  const protocol = req.headers['x-forwarded-proto'] || 'http';
+  const host = req.headers.host || `localhost:${PORT}`;
+  return `${protocol}://${host}`;
+}
+
+function isDataImage(value) {
+  return typeof value === 'string' && /^data:image\/[a-zA-Z0-9.+-]+;base64,/.test(value);
+}
+
+function imageExtension(mime) {
+  if (mime === 'image/jpeg' || mime === 'image/jpg') return 'jpg';
+  if (mime === 'image/webp') return 'webp';
+  if (mime === 'image/gif') return 'gif';
+  return 'png';
+}
+
+function saveStoreImage(dataUrl, storeId, fieldName) {
+  const match = String(dataUrl).match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,([\s\S]+)$/);
+  if (!match) {
+    throw new Error('Invalid image data URL');
+  }
+
+  const mime = match[1];
+  const base64 = match[2].replace(/\s/g, '');
+  const buffer = Buffer.from(base64, 'base64');
+  if (!buffer.length) {
+    throw new Error('Uploaded image is empty');
+  }
+
+  fs.mkdirSync(STORE_UPLOAD_DIR, { recursive: true });
+  const ext = imageExtension(mime);
+  const safeField = fieldName === 'managerImage' ? 'manager' : 'image';
+  const filename = `store-${storeId || 'new'}-${safeField}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}.${ext}`;
+  const filePath = path.join(STORE_UPLOAD_DIR, filename);
+  fs.writeFileSync(filePath, buffer);
+  return `/uploads/stores/${filename}`;
+}
+
+function normalizeUploadUrl(value, req) {
+  if (typeof value !== 'string') return value;
+  const origin = getRequestOrigin(req);
+  if (value.startsWith(`${origin}/uploads/`)) {
+    return value.slice(origin.length);
+  }
+  return value;
+}
+
+function prepareStoreImagePayload(req, payload, id) {
+  const next = Object.assign({}, payload);
+  ['image', 'managerImage'].forEach((key) => {
+    if (!(key in next)) return;
+    if (isDataImage(next[key])) {
+      next[key] = saveStoreImage(next[key], id, key);
+      return;
+    }
+    next[key] = normalizeUploadUrl(next[key], req);
+  });
+  return next;
+}
+
+function expandUploadUrl(req, value) {
+  if (typeof value === 'string' && value.startsWith('/uploads/')) {
+    return `${getRequestOrigin(req)}${value}`;
+  }
+  return value;
+}
+
+function expandStoreImages(req, store) {
+  if (!store || typeof store !== 'object') return store;
+  return Object.assign({}, store, {
+    image: expandUploadUrl(req, store.image),
+    managerImage: expandUploadUrl(req, store.managerImage)
+  });
+}
+
+function expandResourceImages(req, resource, value) {
+  if (resource !== 'stores') return value;
+  if (Array.isArray(value)) return value.map((item) => expandStoreImages(req, item));
+  return expandStoreImages(req, value);
+}
+
+function expandMiniprogramImages(req, data) {
+  return Object.assign({}, data, {
+    stores: (data.stores || []).map((item) => expandStoreImages(req, item))
   });
 }
 
@@ -349,7 +443,7 @@ async function handleApi(req, res) {
 
   if (resource === 'miniprogram' && req.method === 'GET') {
     try {
-      send(res, 200, await backstageRepository.getMiniprogramData());
+      send(res, 200, expandMiniprogramImages(req, await backstageRepository.getMiniprogramData()));
     } catch (error) {
       const data = readData();
       const visibleStores = (data.stores || []).filter((item) => item.visible !== false);
@@ -365,7 +459,7 @@ async function handleApi(req, res) {
         error: error.message,
         ayis: certifiedAyis,
         demands: openDemands,
-        stores: visibleStores,
+        stores: visibleStores.map((item) => expandStoreImages(req, item)),
         serviceModules: visibleModules,
         banners: (data.banners || []).filter((item) => item.visible !== false).sort((a, b) => Number(a.sort || 0) - Number(b.sort || 0))
       });
@@ -458,11 +552,12 @@ async function handleApi(req, res) {
           send(res, 403, { ok: false, error: 'Permission denied' });
           return;
         }
-        send(res, 200, record);
+        send(res, 200, expandResourceImages(req, resource, record));
         return;
       }
       const filter = accessControl.listFilterForUser(currentUser, resource);
-      send(res, 200, filter ? await resourceRepository.listWhere(resource, filter) : await resourceRepository.list(resource));
+      const records = filter ? await resourceRepository.listWhere(resource, filter) : await resourceRepository.list(resource);
+      send(res, 200, expandResourceImages(req, resource, records));
     } catch (error) {
       sendError(res, 503, 'Database unavailable', error.message);
     }
@@ -473,7 +568,9 @@ async function handleApi(req, res) {
     try {
       const body = await readBody(req);
       const payload = accessControl.scopePayloadForCreate(currentUser, resource, body);
-      send(res, 201, await resourceRepository.create(resource, payload, getActor(req, currentUser)));
+      const preparedPayload = resource === 'stores' ? prepareStoreImagePayload(req, payload) : payload;
+      const record = await resourceRepository.create(resource, preparedPayload, getActor(req, currentUser));
+      send(res, 201, expandResourceImages(req, resource, record));
     } catch (error) {
       sendError(res, error.status || 400, 'Create failed', error.message);
     }
@@ -493,12 +590,13 @@ async function handleApi(req, res) {
         return;
       }
       const payload = accessControl.scopePayloadForUpdate(currentUser, resource, body);
-      const record = await resourceRepository.update(resource, id, payload, getActor(req, currentUser));
+      const preparedPayload = resource === 'stores' ? prepareStoreImagePayload(req, payload, id) : payload;
+      const record = await resourceRepository.update(resource, id, preparedPayload, getActor(req, currentUser));
       if (!record) {
         send(res, 404, { error: 'Record not found' });
         return;
       }
-      send(res, 200, record);
+      send(res, 200, expandResourceImages(req, resource, record));
     } catch (error) {
       sendError(res, error.status || 400, 'Update failed', error.message);
     }

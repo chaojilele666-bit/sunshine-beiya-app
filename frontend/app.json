@@ -3,6 +3,7 @@
     "pages/home/home",
     "pages/service/service",
     "pages/stores/stores",
+    "pages/store-detail/store-detail",
     "pages/ayi-detail/ayi-detail",
     "pages/booking/booking",
     "pages/demand/demand",

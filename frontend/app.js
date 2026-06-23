@@ -3,6 +3,42 @@ const { sampleDemands } = require('./data/demands');
 const { stores: localStores } = require('./data/stores');
 
 const BACKEND_BASE_URL = 'http://localhost:5177';
+const imageDisplayCache = {};
+
+function hashString(value) {
+  let hash = 0;
+  const text = String(value || '');
+  for (let index = 0; index < text.length; index += 1) {
+    hash = ((hash << 5) - hash) + text.charCodeAt(index);
+    hash |= 0;
+  }
+  return Math.abs(hash).toString(16);
+}
+
+function imageExtensionFromUrl(url) {
+  const cleanUrl = String(url || '').split('?')[0].split('#')[0].toLowerCase();
+  const match = cleanUrl.match(/\.([a-z0-9]+)$/);
+  if (!match) return 'png';
+  if (['jpg', 'jpeg', 'png'].includes(match[1])) return match[1];
+  return 'png';
+}
+
+function imageSourceType(url) {
+  const value = String(url || '');
+  if (!value) return 'empty';
+  if (value.indexOf('http://localhost:5177/') === 0 || value.indexOf('http://127.0.0.1:5177/') === 0) return 'http-local';
+  if (value.indexOf('https://') === 0) return 'https';
+  if (value.indexOf('wxfile://') === 0 || value.indexOf('file://') === 0 || value.indexOf('http://tmp/') === 0 || value.charAt(0) === '/') return 'local-file';
+  return 'other';
+}
+
+function imageInfo(src) {
+  const value = String(src || '');
+  return {
+    imageType: value.startsWith('data:image/') ? 'data-url' : (value ? 'url' : 'empty'),
+    imageLength: value.length
+  };
+}
 
 function normalizeAyi(item, index) {
   const serviceType = item.serviceType || item.role || '家政';
@@ -54,7 +90,62 @@ function normalizeStore(item, index) {
     id: item.id,
     color: item.color || colors[index % colors.length],
     tags: Array.isArray(item.tags) ? item.tags : [],
-    canStay: Boolean(item.canStay)
+    canStay: Boolean(item.canStay),
+    imageLoadFailed: false
+  }, imageInfo(item.image));
+}
+
+function logStoreSource(source, stores) {
+  console.info(`[stores] source=${source}`);
+  console.info(`[stores] count=${stores.length}`);
+  stores.forEach((store) => {
+    console.info(`[stores] storeId=${store.id} imageType=${store.imageType} imageLength=${store.imageLength}`);
+  });
+}
+
+function resolveImageForDisplay(imageUrl, options) {
+  const storeId = options && options.storeId ? options.storeId : '-';
+  const sourceType = imageSourceType(imageUrl);
+  const urlLength = String(imageUrl || '').length;
+
+  if (!imageUrl) return Promise.resolve('');
+  if (sourceType === 'https' || sourceType === 'local-file') return Promise.resolve(imageUrl);
+  if (sourceType !== 'http-local') return Promise.resolve(imageUrl);
+  if (imageDisplayCache[imageUrl]) return Promise.resolve(imageDisplayCache[imageUrl]);
+
+  return new Promise((resolve) => {
+    wx.request({
+      url: imageUrl,
+      method: 'GET',
+      responseType: 'arraybuffer',
+      success: (res) => {
+        if (res.statusCode < 200 || res.statusCode >= 300 || !res.data) {
+          console.warn(`[store-image] storeId=${storeId} source=${sourceType} urlLength=${urlLength} status=request-failed statusCode=${res.statusCode}`);
+          resolve('');
+          return;
+        }
+
+        const extension = imageExtensionFromUrl(imageUrl);
+        const filePath = `${wx.env.USER_DATA_PATH}/store-image-${hashString(imageUrl)}.${extension}`;
+        wx.getFileSystemManager().writeFile({
+          filePath,
+          data: res.data,
+          success: () => {
+            imageDisplayCache[imageUrl] = filePath;
+            console.info(`[store-image] storeId=${storeId} source=${sourceType} urlLength=${urlLength} status=resolved written=true`);
+            resolve(filePath);
+          },
+          fail: (error) => {
+            console.warn(`[store-image] storeId=${storeId} source=${sourceType} urlLength=${urlLength} status=write-failed error=${error && error.errMsg ? error.errMsg : 'unknown'}`);
+            resolve('');
+          }
+        });
+      },
+      fail: (error) => {
+        console.warn(`[store-image] storeId=${storeId} source=${sourceType} urlLength=${urlLength} status=request-failed error=${error && error.errMsg ? error.errMsg : 'unknown'}`);
+        resolve('');
+      }
+    });
   });
 }
 
@@ -91,6 +182,7 @@ App({
     backendAyis: [],
     backendDemands: [],
     backendStores: [],
+    backendSource: '',
     serviceModules: [],
     banners: [],
     appointments: [],
@@ -126,6 +218,8 @@ App({
     });
   },
 
+  resolveImageForDisplay,
+
   loadBackendData() {
     return this.requestBackend('miniprogram')
       .then((data) => {
@@ -133,20 +227,25 @@ App({
         const backendDemands = (data.demands || []).map(normalizeDemand);
         const backendStores = (data.stores || []).map(normalizeStore);
         this.globalData.backendReady = true;
+        this.globalData.backendSource = data.source || 'unknown';
         this.globalData.backendAyis = backendAyis;
         this.globalData.backendDemands = backendDemands;
         this.globalData.backendStores = backendStores;
         this.globalData.ayis = backendAyis.length ? backendAyis : localAyis;
         this.globalData.serviceModules = normalizeServiceModules(data.serviceModules);
         this.globalData.banners = data.banners || [];
+        logStoreSource(this.globalData.backendSource, backendStores);
         return data;
       })
-      .catch(() => {
+      .catch((error) => {
         this.globalData.backendReady = false;
+        this.globalData.backendSource = 'local-fallback';
         this.globalData.ayis = localAyis;
         this.globalData.backendDemands = sampleDemands;
-        this.globalData.backendStores = localStores;
+        this.globalData.backendStores = localStores.map(normalizeStore);
         this.globalData.serviceModules = normalizeServiceModules([]);
+        console.warn(`[stores] source=local-fallback error=${error && error.message ? error.message : 'unknown'}`);
+        logStoreSource('local-fallback', this.globalData.backendStores);
         return null;
       });
   },

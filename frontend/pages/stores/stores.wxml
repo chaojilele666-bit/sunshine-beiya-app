@@ -35,14 +35,22 @@
     wx:key="id"
     class="store-card card"
     bindtap="showStore"
-    data-name="{{item.name}}"
-    data-address="{{item.address}}"
-    data-area="{{item.area}}"
+    data-id="{{item.id}}"
   >
     <view class="store-header">
-      <view class="store-image" style="background: {{item.color}};">阳光</view>
+      <image
+        wx:if="{{item.displayImage && !item.imageLoadFailed}}"
+        class="store-image store-image-photo"
+        src="{{item.displayImage}}"
+        mode="aspectFill"
+        binderror="handleStoreImageError"
+        data-id="{{item.id}}"
+        data-image-type="{{item.imageType}}"
+        data-image-length="{{item.imageLength}}"
+      />
+      <view wx:else class="store-image store-image-placeholder" style="background: {{item.color}};">阳光</view>
       <view class="store-title">
-        <view class="store-name">{{item.name}}</view>
+        <view class="store-name" bindtap="showStore" data-id="{{item.id}}">{{item.name}}</view>
         <view class="store-district">{{item.district}}</view>
       </view>
       <view wx:if="{{item.canStay}}" class="stay-tag">可住宿</view>
@@ -65,8 +73,11 @@
       <button
         class="nav-button"
         catchtap="navigateStore"
+        data-id="{{item.id}}"
         data-name="{{item.name}}"
         data-address="{{item.address}}"
+        data-latitude="{{item.latitude}}"
+        data-longitude="{{item.longitude}}"
       >导航</button>
       <button class="call-button" catchtap="callStore" data-phone="{{item.phone}}">电话</button>
     </view>

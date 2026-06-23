@@ -55,6 +55,9 @@ const resources = {
       ['salary', '期望薪资'],
       ['availableTime', '可上户时间'],
       ['skills', '技能标签，逗号分隔'],
+      ['storeId', '所属门店ID', 'number'],
+      ['featured', '是否金牌推荐', 'boolean'],
+      ['featuredTitle', '推荐称号'],
       ['status', '状态', 'select', ['待审核', '已认证', '已下架']],
       ['idCardImage', '身份证照片', 'image'],
       ['healthCertImage', '健康证照片', 'image'],
@@ -187,7 +190,19 @@ const resources = {
       ['area', '覆盖范围'],
       ['tags', '服务标签，逗号分隔'],
       ['canStay', '可住宿', 'boolean'],
-      ['visible', '是否显示', 'boolean']
+      ['visible', '是否显示', 'boolean'],
+      ['intro', '门店简介', 'textarea'],
+      ['businessHours', '营业时间'],
+      ['managerName', '店长姓名'],
+      ['managerTitle', '店长职位'],
+      ['managerImage', '店长照片', 'image'],
+      ['managerIntro', '店长简介', 'textarea'],
+      ['staffCount', '员工人数', 'number'],
+      ['consultantCount', '顾问人数', 'number'],
+      ['ayiCount', '阿姨储备数量', 'number'],
+      ['teamIntro', '团队简介', 'textarea'],
+      ['latitude', '纬度', 'number'],
+      ['longitude', '经度', 'number']
     ],
     summary: (item) => [
       `${item.district || '-'} / ${item.phone || '-'}`,
@@ -270,6 +285,7 @@ const imageTips = {
   idCardImage: '用于后台身份核验，正式版会上传到云存储并限制权限查看。',
   healthCertImage: '用于健康证审核，正式版会记录有效期和审核状态。',
   skillCertImage: '可上传月嫂证、育婴师证、护工证等技能证书。',
+  managerImage: '用于门店详情页店长卡片展示，当前本地 MVP 可保存为 base64 图片。',
   default: '建议上传横图，后续小程序可用于卡片展示。'
 };
 
@@ -277,10 +293,10 @@ function normalizeValue(key, value) {
   if (['skills', 'tags', 'permissions'].includes(key)) {
     return String(value || '').split(',').map((text) => text.trim()).filter(Boolean);
   }
-  if (['canStay', 'visible'].includes(key)) {
+  if (['canStay', 'visible', 'featured'].includes(key)) {
     return value === true || value === 'true';
   }
-  if (['age', 'experience', 'sort', 'demandId', 'orderId'].includes(key)) {
+  if (['age', 'experience', 'sort', 'demandId', 'orderId', 'storeId', 'staffCount', 'consultantCount', 'ayiCount', 'latitude', 'longitude'].includes(key)) {
     return Number(value) || 0;
   }
   return value;

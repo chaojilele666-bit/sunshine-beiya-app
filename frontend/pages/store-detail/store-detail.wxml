@@ -1,0 +1,132 @@
+<view class="page store-detail-page">
+  <view wx:if="{{loading && !store}}" class="empty card">
+    <view class="empty-title">正在加载门店信息</view>
+    <view class="muted">请稍候...</view>
+  </view>
+
+  <view wx:elif="{{notFound}}" class="empty card">
+    <view class="empty-title">没有找到门店</view>
+    <view class="muted">门店可能已下架，返回门店列表再试试。</view>
+    <button class="primary-button back-button" bindtap="goBack">返回门店</button>
+  </view>
+
+  <view wx:else>
+    <view class="hero-card card">
+      <image
+        wx:if="{{store.displayImage && !store.imageLoadFailed}}"
+        class="store-hero-image"
+        src="{{store.displayImage}}"
+        mode="aspectFill"
+        binderror="handleStoreImageError"
+        data-image-type="{{store.imageType}}"
+        data-image-length="{{store.imageLength}}"
+      />
+      <view wx:else class="store-hero-placeholder">阳光</view>
+      <view class="hero-content">
+        <view class="store-title-row">
+          <view class="store-title">{{store.name}}</view>
+          <view wx:if="{{store.canStay}}" class="stay-tag">可住宿</view>
+        </view>
+        <view class="store-district">{{store.district}} · {{store.canStayText}}</view>
+      </view>
+    </view>
+
+    <view wx:if="{{store.intro}}" class="section-card card">
+      <view class="section-title">门店介绍</view>
+      <view class="paragraph">{{store.intro}}</view>
+    </view>
+
+    <view wx:if="{{store.managerName || store.managerIntro}}" class="section-card card">
+      <view class="section-title">店长介绍</view>
+      <view class="manager-card">
+        <image
+          wx:if="{{store.managerDisplayImage && !store.managerImageLoadFailed}}"
+          class="manager-image"
+          src="{{store.managerDisplayImage}}"
+          mode="aspectFill"
+          binderror="handleManagerImageError"
+          data-image-type="{{store.managerImageType}}"
+          data-image-length="{{store.managerImageLength}}"
+        />
+        <view wx:else class="manager-placeholder">店长</view>
+        <view class="manager-main">
+          <view class="manager-name">{{store.managerDisplayName}}</view>
+          <view wx:if="{{store.managerTitle}}" class="manager-title">{{store.managerTitle}}</view>
+          <view wx:if="{{store.managerIntro}}" class="manager-intro">{{store.managerIntro}}</view>
+        </view>
+      </view>
+    </view>
+
+    <view wx:if="{{store.staffCount || store.consultantCount || store.ayiCount || store.teamIntro}}" class="section-card card">
+      <view class="section-title">团队实力</view>
+      <view class="team-summary">
+        员工 {{store.staffCount || 0}} 人｜顾问 {{store.consultantCount || 0}} 人｜储备阿姨 {{store.ayiCount || 0}} 人
+      </view>
+      <view wx:if="{{store.teamIntro}}" class="paragraph">{{store.teamIntro}}</view>
+    </view>
+
+    <view class="section-card card">
+      <view class="section-title">本店金牌阿姨</view>
+      <view wx:if="{{featuredAyis.length}}">
+        <view
+          wx:for="{{featuredAyis}}"
+          wx:key="id"
+          class="ayi-card"
+          bindtap="goAyiDetail"
+          data-id="{{item.id}}"
+        >
+          <image wx:if="{{item.image}}" class="ayi-photo" src="{{item.image}}" mode="aspectFill" />
+          <view wx:else class="ayi-avatar" style="background: {{item.avatarColor}};">{{item.avatarText}}</view>
+          <view class="ayi-main">
+            <view class="ayi-head">
+              <text class="ayi-name">{{item.name}}</text>
+              <text wx:if="{{item.featured}}" class="featured-tag">{{item.featuredTitleText}}</text>
+            </view>
+            <view class="ayi-meta">{{item.serviceType}} · {{item.experience || '-'}} 年经验</view>
+            <view class="tag-row">
+              <text wx:for="{{item.skills}}" wx:key="*this" class="skill-tag">{{item}}</text>
+            </view>
+            <view class="ayi-bottom">
+              <text class="price">¥{{item.salary}}</text>
+              <text class="muted">{{item.schedule}}</text>
+            </view>
+          </view>
+        </view>
+      </view>
+      <view wx:else class="empty-inline">该门店暂未发布推荐阿姨</view>
+    </view>
+
+    <view wx:if="{{store.tags.length || store.area}}" class="section-card card">
+      <view class="section-title">服务范围</view>
+      <view wx:if="{{store.tags.length}}" class="service-scope">{{store.tagsText}}</view>
+      <view wx:if="{{store.area}}" class="info-row">
+        <text class="info-label">覆盖区域</text>
+        <text class="info-value">{{store.area}}</text>
+      </view>
+    </view>
+
+    <view class="section-card card contact-card">
+      <view class="section-title">地址与营业时间</view>
+      <view class="info-row">
+        <text class="info-label">地址</text>
+        <text class="info-value">{{store.addressText}}</text>
+      </view>
+      <view class="info-row">
+        <text class="info-label">电话</text>
+        <text class="info-value">{{store.phoneText}}</text>
+      </view>
+      <view wx:if="{{store.area}}" class="info-row">
+        <text class="info-label">覆盖</text>
+        <text class="info-value">{{store.area}}</text>
+      </view>
+      <view wx:if="{{store.businessHours}}" class="info-row">
+        <text class="info-label">营业</text>
+        <text class="info-value">{{store.businessHours}}</text>
+      </view>
+      <view class="action-row">
+        <button class="nav-button" bindtap="navigateStore">导航</button>
+        <button class="call-button" bindtap="callStore">拨打电话</button>
+      </view>
+    </view>
+  </view>
+</view>
