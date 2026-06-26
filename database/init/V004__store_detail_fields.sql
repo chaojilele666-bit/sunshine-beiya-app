@@ -34,10 +34,19 @@ SET intro = '演示数据：东城安定门服务点面向东城、西城和朝�
     team_intro = '演示数据：团队由服务顾问、资料审核和客户跟进人员组成，重点服务东城及周边家庭。',
     latitude = 39.949000,
     longitude = 116.408000
-WHERE id = 1;
+WHERE name = '东城安定门服务点';
 
 UPDATE ayis
-SET store_id = COALESCE(store_id, 1),
+SET store_id = COALESCE(
+      store_id,
+      (
+        SELECT id
+        FROM stores
+        WHERE name = '东城安定门服务点'
+        ORDER BY id
+        LIMIT 1
+      )
+    ),
     featured = true,
     featured_title = '金牌育儿嫂'
 WHERE id = 1;
@@ -53,7 +62,16 @@ VALUES (
   ARRAY['家庭餐','收纳整理','老人陪护'],
   '已认证',
   '演示数据：做饭好，收纳利落，适合长期住家服务。',
-  1, true, '金牌住家保姆', true
+  (
+    SELECT id
+    FROM stores
+    WHERE name = '东城安定门服务点'
+    ORDER BY id
+    LIMIT 1
+  ),
+  true,
+  '金牌住家保姆',
+  true
 )
 ON CONFLICT (phone) DO UPDATE
 SET image = EXCLUDED.image,
@@ -68,7 +86,7 @@ SET image = EXCLUDED.image,
     available_time = EXCLUDED.available_time,
     skills = EXCLUDED.skills,
     intro = EXCLUDED.intro,
-    store_id = EXCLUDED.store_id,
+    store_id = COALESCE(ayis.store_id, EXCLUDED.store_id),
     featured = EXCLUDED.featured,
     featured_title = EXCLUDED.featured_title,
     status = EXCLUDED.status,
@@ -85,7 +103,16 @@ VALUES (
   ARRAY['产妇护理','新生儿护理','月子餐'],
   '已认证',
   '演示数据：月子餐搭配细致，新生儿护理经验丰富。',
-  1, true, '明星月嫂', true
+  (
+    SELECT id
+    FROM stores
+    WHERE name = '东城安定门服务点'
+    ORDER BY id
+    LIMIT 1
+  ),
+  true,
+  '明星月嫂',
+  true
 )
 ON CONFLICT (phone) DO UPDATE
 SET image = EXCLUDED.image,
@@ -100,7 +127,7 @@ SET image = EXCLUDED.image,
     available_time = EXCLUDED.available_time,
     skills = EXCLUDED.skills,
     intro = EXCLUDED.intro,
-    store_id = EXCLUDED.store_id,
+    store_id = COALESCE(ayis.store_id, EXCLUDED.store_id),
     featured = EXCLUDED.featured,
     featured_title = EXCLUDED.featured_title,
     status = EXCLUDED.status,
