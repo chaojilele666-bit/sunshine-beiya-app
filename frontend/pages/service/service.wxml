@@ -23,13 +23,9 @@
         <view class="feature-title">好阿姨严选</view>
         <view class="feature-desc">认证优先展示</view>
       </view>
-      <view class="feature-card" bindtap="useFeature" data-type="住家保姆">
-        <view class="feature-title">做饭好吃</view>
-        <view class="feature-desc">家务餐食</view>
-      </view>
-      <view class="feature-card" bindtap="useFeature" data-type="老人陪护">
-        <view class="feature-title">养老护理</view>
-        <view class="feature-desc">陪诊照护</view>
+      <view wx:for="{{featureServices}}" wx:key="type" class="feature-card" bindtap="useFeature" data-type="{{item.type}}">
+        <view class="feature-title">{{item.title}}</view>
+        <view class="feature-desc">{{item.desc}}</view>
       </view>
     </view>
 

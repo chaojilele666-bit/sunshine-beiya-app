@@ -8,8 +8,9 @@ Page({
     isCustomer: false,
     isAyi: false,
     query: '',
-    serviceTypeNames: ['全部', '育儿嫂', '月嫂', '住家保姆', '小时工', '老人陪护'],
+    serviceTypeNames: ['全部'],
     serviceTypes: [],
+    featureServices: [],
     activeType: '全部',
     filterTips: ['从业年限', '价格', '人气', '筛选'],
     ayis,
@@ -34,12 +35,21 @@ Page({
     const applications = app.globalData.applications || [];
     const sourceAyis = app.globalData.ayis && app.globalData.ayis.length ? app.globalData.ayis : ayis;
     const backendDemands = app.globalData.backendDemands && app.globalData.backendDemands.length ? app.globalData.backendDemands : sampleDemands;
+    const serviceModules = app.getServiceModulesByType('service');
+    const serviceTypeNames = ['全部'].concat(serviceModules.map((item) => item.title).filter(Boolean));
+    const featureServices = serviceModules.slice(0, 2).map((item) => ({
+      type: item.title,
+      title: item.title,
+      desc: item.description || item.summary || '查看相关服务'
+    }));
 
     this.setData({
       role,
       noRole: !role,
       isCustomer: role === 'customer',
-      isAyi: role === 'ayi'
+      isAyi: role === 'ayi',
+      serviceTypeNames,
+      featureServices
     });
 
     const localDemands = app.globalData.demands || [];
@@ -49,8 +59,9 @@ Page({
       allDemands: merged
     });
 
-    const nextType = app.globalData.pendingServiceType || this.data.activeType || '全部';
+    const requestedType = app.globalData.pendingServiceType || this.data.activeType || '全部';
     app.globalData.pendingServiceType = '';
+    const nextType = serviceTypeNames.includes(requestedType) ? requestedType : '全部';
     if (role === 'ayi') {
       this.filterDemands(nextType, merged);
     } else {

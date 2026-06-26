@@ -7,6 +7,7 @@
     "pages/ayi-detail/ayi-detail",
     "pages/booking/booking",
     "pages/demand/demand",
+    "pages/demand-detail/demand-detail",
     "pages/ayi-profile/ayi-profile",
     "pages/ayi-certs/ayi-certs",
     "pages/my-applications/my-applications",

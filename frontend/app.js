@@ -3,7 +3,16 @@ const { sampleDemands } = require('./data/demands');
 const { stores: localStores } = require('./data/stores');
 
 const BACKEND_BASE_URL = 'http://localhost:5177';
+const CUSTOMER_DEMAND_ACCESS_KEY = 'customerDemandAccessList';
 const imageDisplayCache = {};
+const DEFAULT_COMPANY_PROFILE = {
+  companyName: '',
+  shortName: '',
+  introduction: '',
+  customerServicePhone: '',
+  address: '',
+  businessHours: ''
+};
 
 function hashString(value) {
   let hash = 0;
@@ -38,6 +47,19 @@ function imageInfo(src) {
     imageType: value.startsWith('data:image/') ? 'data-url' : (value ? 'url' : 'empty'),
     imageLength: value.length
   };
+}
+
+function normalizeDemandStatus(status) {
+  const map = {
+    顾问待联系: '待处理',
+    待跟进: '待处理',
+    待匹配: '匹配中',
+    已推荐: '匹配中',
+    已面试: '已匹配',
+    已成交: '已匹配',
+    已取消: '已关闭'
+  };
+  return map[status] || status || '待处理';
 }
 
 function normalizeAyi(item, index) {
@@ -79,7 +101,7 @@ function normalizeDemand(item) {
     startTime: item.startTime || '待确认',
     budget: item.budget || '面议',
     familyInfo: item.familyInfo || item.note || '',
-    status: item.status || '待跟进',
+    status: normalizeDemandStatus(item.status),
     createdAt: item.createdAt || item.source || '后台数据'
   });
 }
@@ -151,17 +173,36 @@ function resolveImageForDisplay(imageUrl, options) {
 
 function normalizeServiceModules(modules) {
   if (!modules || !modules.length) {
-    return [
-      { label: '服务范围', value: '家政/母婴/养老' },
-      { label: '重点区域', value: '东城/朝阳/海淀' },
-      { label: '推荐机制', value: '顾问匹配' }
-    ];
+    return [];
   }
   return modules.map((item) => ({
+    id: item.id,
+    title: item.title || item.label || '',
+    description: item.summary || item.description || item.value || '',
     label: item.title,
     value: item.summary,
-    image: item.image
+    image: item.image,
+    moduleType: item.moduleType || item.module_type || 'highlight',
+    iconText: item.iconText || item.icon_text || (item.title || '').slice(0, 1),
+    iconImage: item.iconImage || item.icon_image || '',
+    theme: item.theme || 'green',
+    targetType: item.targetType || item.target_type || '无跳转',
+    targetValue: item.targetValue || item.target_value || '',
+    sort: Number(item.sort || 0),
+    visible: item.visible !== false
   }));
+}
+
+function normalizeCompanyProfile(profile) {
+  const source = profile || {};
+  return {
+    companyName: source.companyName || source.company_name || '',
+    shortName: source.shortName || source.short_name || '',
+    introduction: source.introduction || '',
+    customerServicePhone: source.customerServicePhone || source.customer_service_phone || '',
+    address: source.address || '',
+    businessHours: source.businessHours || source.business_hours || ''
+  };
 }
 
 function showBackendSyncFailedToast() {
@@ -185,6 +226,7 @@ App({
     backendSource: '',
     serviceModules: [],
     banners: [],
+    companyProfile: Object.assign({}, DEFAULT_COMPANY_PROFILE),
     appointments: [],
     demands: [],
     applications: [],
@@ -197,15 +239,15 @@ App({
     this.loadBackendData();
   },
 
-  requestBackend(path, method, data) {
+  requestBackend(path, method, data, headers) {
     return new Promise((resolve, reject) => {
       wx.request({
         url: `${BACKEND_BASE_URL}/api/${path}`,
         method: method || 'GET',
         data: data || {},
-        header: {
+        header: Object.assign({
           'content-type': 'application/json'
-        },
+        }, headers || {}),
         success: (res) => {
           if (res.statusCode >= 200 && res.statusCode < 300) {
             resolve(res.data);
@@ -218,10 +260,77 @@ App({
     });
   },
 
+  getStoredCustomerDemandAccessList() {
+    const list = wx.getStorageSync(CUSTOMER_DEMAND_ACCESS_KEY);
+    return Array.isArray(list) ? list.filter((item) => item && item.demandId && item.accessToken) : [];
+  },
+
+  saveCustomerDemandAccess(demandId, accessToken) {
+    if (!demandId || !accessToken) return;
+    const list = this.getStoredCustomerDemandAccessList();
+    const next = [
+      { demandId, accessToken, savedAt: new Date().toISOString() },
+      ...list.filter((item) => String(item.demandId) !== String(demandId))
+    ];
+    wx.setStorageSync(CUSTOMER_DEMAND_ACCESS_KEY, next.slice(0, 50));
+  },
+
+  findCustomerDemandAccess(demandId) {
+    return this.getStoredCustomerDemandAccessList().find((item) => String(item.demandId) === String(demandId));
+  },
+
+  fetchCustomerDemand(demandId, accessToken) {
+    const token = accessToken || (this.findCustomerDemandAccess(demandId) || {}).accessToken;
+    if (!token) return Promise.reject(new Error('缺少需求访问凭证'));
+    return this.requestBackend(`miniprogram/demands/${demandId}`, 'GET', {}, {
+      'X-Demand-Access-Token': token
+    })
+      .then((data) => normalizeDemand(data.demand));
+  },
+
+  fetchCustomerDemandMatches(demandId, accessToken) {
+    const token = accessToken || (this.findCustomerDemandAccess(demandId) || {}).accessToken;
+    if (!token) return Promise.reject(new Error('缺少需求访问凭证'));
+    return this.requestBackend(`miniprogram/demands/${demandId}/matches`, 'GET', {}, {
+      'X-Demand-Access-Token': token
+    })
+      .then((data) => data.matches || []);
+  },
+
+  decideDemandMatch(matchId, demandId, decision, accessToken) {
+    const token = accessToken || (this.findCustomerDemandAccess(demandId) || {}).accessToken;
+    if (!token) return Promise.reject(new Error('缺少需求访问凭证'));
+    return this.requestBackend(`miniprogram/demand-matches/${matchId}/decision`, 'POST', {
+      demandId,
+      decision
+    }, {
+      'X-Demand-Access-Token': token
+    });
+  },
+
   resolveImageForDisplay,
 
-  loadBackendData() {
-    return this.requestBackend('miniprogram')
+  getServiceModulesByType(moduleType) {
+    return (this.globalData.serviceModules || [])
+      .filter((item) => item && item.visible !== false && item.moduleType === moduleType)
+      .sort((a, b) => Number(a.sort || 0) - Number(b.sort || 0));
+  },
+
+  getServiceTypeNames(currentValue) {
+    const names = this.getServiceModulesByType('service')
+      .map((item) => item.title || item.targetValue || item.label)
+      .filter(Boolean);
+    if (currentValue && !names.includes(currentValue)) {
+      names.unshift(currentValue);
+    }
+    return names;
+  },
+
+  loadBackendData(options) {
+    const path = options && options.force
+      ? `miniprogram?_=${Date.now()}`
+      : 'miniprogram';
+    return this.requestBackend(path)
       .then((data) => {
         const backendAyis = (data.ayis || []).map(normalizeAyi);
         const backendDemands = (data.demands || []).map(normalizeDemand);
@@ -234,6 +343,7 @@ App({
         this.globalData.ayis = backendAyis.length ? backendAyis : localAyis;
         this.globalData.serviceModules = normalizeServiceModules(data.serviceModules);
         this.globalData.banners = data.banners || [];
+        this.globalData.companyProfile = normalizeCompanyProfile(data.companyProfile);
         logStoreSource(this.globalData.backendSource, backendStores);
         return data;
       })
@@ -244,6 +354,7 @@ App({
         this.globalData.backendDemands = sampleDemands;
         this.globalData.backendStores = localStores.map(normalizeStore);
         this.globalData.serviceModules = normalizeServiceModules([]);
+        this.globalData.companyProfile = normalizeCompanyProfile(null);
         console.warn(`[stores] source=local-fallback error=${error && error.message ? error.message : 'unknown'}`);
         logStoreSource('local-fallback', this.globalData.backendStores);
         return null;
@@ -268,15 +379,26 @@ App({
   addDemand(demand) {
     const record = Object.assign({
       id: Date.now(),
-      status: '顾问待联系',
+      status: '待处理',
       createdAt: new Date().toLocaleString()
     }, demand);
     this.globalData.demands = [record, ...this.globalData.demands];
-    this.requestBackend('demands', 'POST', Object.assign({
-      source: '小程序',
+    return this.requestBackend('miniprogram/demands', 'POST', Object.assign({
       consultant: '',
       followNote: ''
-    }, record)).catch(showBackendSyncFailedToast);
+    }, record)).then((result) => {
+      const saved = normalizeDemand(result.demand || record);
+      this.saveCustomerDemandAccess(result.demandId || saved.id, result.accessToken);
+      this.globalData.demands = [saved, ...this.globalData.demands.filter((item) => item.id !== record.id)];
+      return {
+        demand: saved,
+        demandId: result.demandId || saved.id,
+        accessToken: result.accessToken
+      };
+    }).catch((error) => {
+      this.globalData.demands = this.globalData.demands.filter((item) => item.id !== record.id);
+      throw error;
+    });
   },
 
   saveAyiProfile(profile) {

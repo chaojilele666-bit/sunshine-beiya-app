@@ -1,7 +1,13 @@
 Page({
   data: {
-    phone: '18611607087',
-    address: '北京市东城区安定门外东河沿乙六号楼三层',
+    companyProfile: {
+      companyName: '',
+      shortName: '',
+      introduction: '',
+      customerServicePhone: '',
+      address: '',
+      businessHours: ''
+    },
     services: [
       '一般家政',
       '月嫂服务',
@@ -42,9 +48,29 @@ Page({
     ]
   },
 
+  onShow() {
+    const app = getApp();
+    this.setData({
+      companyProfile: app.globalData.companyProfile || {}
+    });
+    app.loadBackendData({ force: true }).then(() => {
+      this.setData({
+        companyProfile: app.globalData.companyProfile || {}
+      });
+    });
+  },
+
   callService() {
+    const phoneNumber = (this.data.companyProfile || {}).customerServicePhone;
+    if (!phoneNumber) {
+      wx.showToast({
+        title: '客服电话暂未配置，请稍后再试。',
+        icon: 'none'
+      });
+      return;
+    }
     wx.makePhoneCall({
-      phoneNumber: this.data.phone
+      phoneNumber
     });
   }
 });

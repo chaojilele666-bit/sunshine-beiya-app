@@ -18,7 +18,8 @@ Page({
     noAppointments: true,
     demands: [],
     hasDemands: false,
-    noDemands: true
+    noDemands: true,
+    companyProfile: {}
   },
 
   onShow() {
@@ -31,7 +32,7 @@ Page({
     const profile = app.globalData.ayiProfile;
     const applications = app.globalData.applications || [];
     const appointments = app.globalData.appointments || [];
-    const demands = app.globalData.demands || [];
+    const localDemands = app.globalData.demands || [];
     this.setData({
       role,
       roleText,
@@ -44,14 +45,47 @@ Page({
       profile,
       profileStatus: profile ? profile.status : '未完善',
       applications,
+      companyProfile: app.globalData.companyProfile || {},
       hasApplications: applications.length > 0,
       noApplications: applications.length === 0,
       appointments,
       hasAppointments: appointments.length > 0,
       noAppointments: appointments.length === 0,
-      demands,
-      hasDemands: demands.length > 0,
-      noDemands: demands.length === 0
+      demands: localDemands,
+      hasDemands: localDemands.length > 0,
+      noDemands: localDemands.length === 0
+    });
+    if (role === 'customer') {
+      this.loadCustomerDemands();
+    }
+    app.loadBackendData({ force: true }).then(() => {
+      this.setData({
+        companyProfile: app.globalData.companyProfile || {}
+      });
+    });
+  },
+
+  loadCustomerDemands() {
+    const app = getApp();
+    const accessList = app.getStoredCustomerDemandAccessList();
+    if (!accessList.length) {
+      this.setData({
+        demands: [],
+        hasDemands: false,
+        noDemands: true
+      });
+      return;
+    }
+
+    Promise.all(accessList.map((item) => (
+      app.fetchCustomerDemand(item.demandId, item.accessToken).catch(() => null)
+    ))).then((list) => {
+      const demands = list.filter(Boolean);
+      this.setData({
+        demands,
+        hasDemands: demands.length > 0,
+        noDemands: demands.length === 0
+      });
     });
   },
 
@@ -64,6 +98,12 @@ Page({
   goDemand() {
     wx.navigateTo({
       url: '/pages/demand/demand'
+    });
+  },
+
+  goDemandDetail(event) {
+    wx.navigateTo({
+      url: `/pages/demand-detail/demand-detail?id=${event.currentTarget.dataset.id}`
     });
   },
 
@@ -98,9 +138,15 @@ Page({
   },
 
   callService() {
-    wx.makePhoneCall({
-      phoneNumber: '4000000000'
-    });
+    const phoneNumber = (getApp().globalData.companyProfile || {}).customerServicePhone;
+    if (!phoneNumber) {
+      wx.showToast({
+        title: '客服电话暂未配置，请稍后再试。',
+        icon: 'none'
+      });
+      return;
+    }
+    wx.makePhoneCall({ phoneNumber });
   },
 
   switchRole() {

@@ -99,7 +99,7 @@
       <view class="muted">填写家庭情况后，顾问会帮你推荐合适阿姨。</view>
       <button class="primary-button empty-button" bindtap="goDemand">发布需求</button>
     </view>
-    <view wx:for="{{demands}}" wx:key="id" class="appointment card">
+    <view wx:for="{{demands}}" wx:key="id" class="appointment card" bindtap="goDemandDetail" data-id="{{item.id}}">
       <view class="appointment-top">
         <view class="appointment-name">{{item.serviceType}}</view>
         <view class="status">{{item.status}}</view>

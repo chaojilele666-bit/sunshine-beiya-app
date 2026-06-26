@@ -1,8 +1,8 @@
 Page({
   data: {
-    serviceTypes: ['育儿嫂', '月嫂', '住家保姆', '小时工', '老人陪护'],
+    serviceTypes: [],
     serviceIndex: 0,
-    serviceText: '育儿嫂',
+    serviceText: '请选择服务类型',
     form: {
       name: '',
       phone: '',
@@ -13,6 +13,26 @@ Page({
       budget: '',
       note: ''
     }
+  },
+
+  onShow() {
+    const app = getApp();
+    this.refreshServiceTypes();
+    app.loadBackendData().then(() => {
+      this.refreshServiceTypes();
+    });
+  },
+
+  refreshServiceTypes() {
+    const app = getApp();
+    const previous = this.data.serviceText === '请选择服务类型' ? '' : this.data.serviceText;
+    const serviceTypes = app.getServiceTypeNames(previous);
+    const serviceIndex = Math.max(0, serviceTypes.indexOf(previous));
+    this.setData({
+      serviceTypes,
+      serviceIndex,
+      serviceText: serviceTypes[serviceIndex] || '请选择服务类型'
+    });
   },
 
   chooseService(event) {
@@ -32,7 +52,8 @@ Page({
 
   submitDemand() {
     const { form, serviceTypes, serviceIndex } = this.data;
-    if (!form.name || !form.phone || !form.address || !form.startTime) {
+    const serviceType = serviceTypes[serviceIndex];
+    if (!form.name || !form.phone || !form.address || !form.startTime || !serviceType) {
       wx.showToast({
         title: '请完善必填信息',
         icon: 'none'
@@ -40,22 +61,33 @@ Page({
       return;
     }
 
-    getApp().addDemand(Object.assign({
-      customerName: form.name,
-      serviceType: serviceTypes[serviceIndex],
-      area: form.address,
-      showToAyi: true
-    }, form));
-
-    wx.showToast({
-      title: '需求已提交',
-      icon: 'success'
+    wx.showLoading({
+      title: '提交中'
     });
 
-    setTimeout(() => {
-      wx.switchTab({
-        url: '/pages/mine/mine'
+    getApp().addDemand(Object.assign({
+      customerName: form.name,
+      serviceType,
+      area: form.address,
+      showToAyi: true
+    }, form)).then((result) => {
+      wx.hideLoading();
+      wx.showToast({
+        title: '需求已提交',
+        icon: 'success'
       });
-    }, 700);
+      setTimeout(() => {
+        wx.navigateTo({
+          url: `/pages/demand-detail/demand-detail?id=${result.demandId}`
+        });
+      }, 700);
+    }).catch(() => {
+      wx.hideLoading();
+      wx.showToast({
+        title: '提交失败，请确认后台服务是否可用',
+        icon: 'none',
+        duration: 3000
+      });
+    });
   }
 });
