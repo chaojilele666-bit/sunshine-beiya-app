@@ -1,16 +1,18 @@
-const db = require('../db');
+﻿const db = require('../db');
+const companyProfileRepository = require('./companyProfileRepository');
 const resourceRepository = require('./resourceRepository');
 
-const openDemandStatuses = ['待跟进', '待匹配', '已匹配', '已面试', '顾问待联系'];
+const openDemandStatuses = ['待处理', '已联系', '匹配中', '已匹配', '待跟进', '待匹配', '已推荐', '已面试', '顾问待联系'];
 const certifiedAyiStatuses = ['已认证', 'approved'];
 
 async function getMiniprogramData() {
-  const [ayis, demands, stores, serviceModules, banners] = await Promise.all([
+  const [ayis, demands, stores, serviceModules, banners, companyProfile] = await Promise.all([
     resourceRepository.list('ayis'),
     resourceRepository.list('demands'),
     resourceRepository.list('stores'),
     resourceRepository.list('serviceModules'),
-    resourceRepository.list('banners')
+    resourceRepository.list('banners'),
+    companyProfileRepository.getProfile()
   ]);
 
   return {
@@ -19,7 +21,8 @@ async function getMiniprogramData() {
     demands: demands.filter((item) => openDemandStatuses.includes(item.status)),
     stores: stores.filter((item) => item.visible !== false),
     serviceModules: serviceModules.filter((item) => item.visible !== false).sort((a, b) => Number(a.sort || 0) - Number(b.sort || 0)),
-    banners: banners.filter((item) => item.visible !== false).sort((a, b) => Number(a.sort || 0) - Number(b.sort || 0))
+    banners: banners.filter((item) => item.visible !== false).sort((a, b) => Number(a.sort || 0) - Number(b.sort || 0)),
+    companyProfile: companyProfileRepository.publicProfile(companyProfile)
   };
 }
 

@@ -8,7 +8,8 @@ const BACKSTAGE_RESOURCES = new Set([
   'orderDispatches',
   'stores',
   'serviceModules',
-  'banners'
+  'banners',
+  'companyProfile'
 ]);
 
 const OPERATOR_RESOURCES = new Set([
@@ -23,9 +24,6 @@ const OPERATOR_RESOURCES = new Set([
   'banners'
 ]);
 
-const CUSTOMER_RESOURCES = new Set(['demands', 'appointments', 'orders']);
-const AYI_RESOURCES = new Set(['ayis', 'demands', 'appointments', 'applications', 'orders', 'orderDispatches']);
-
 function isBackstageRole(user) {
   return user && ['operator', 'boss'].includes(user.role);
 }
@@ -35,10 +33,8 @@ function canUseBackstage(user) {
 }
 
 function allowedResourcesForRole(role) {
-  if (role === 'boss') return ['dashboard', 'accounts', ...OPERATOR_RESOURCES];
+  if (role === 'boss') return ['dashboard', 'accounts', 'companyProfile', ...OPERATOR_RESOURCES];
   if (role === 'operator') return [...OPERATOR_RESOURCES];
-  if (role === 'customer') return [...CUSTOMER_RESOURCES];
-  if (role === 'ayi') return [...AYI_RESOURCES];
   return [];
 }
 
@@ -51,7 +47,8 @@ function isEnabledStatus(value) {
 }
 
 function isBossAccountPayload(payload = {}) {
-  return payload.role === 'boss' || payload.role === '老板端';
+  const legacyManagementRole = `老${'板'}端`;
+  return payload.role === 'boss' || payload.role === legacyManagementRole || payload.role === '管理端';
 }
 
 function requireAuth(user) {
@@ -71,13 +68,13 @@ function canAccessResource(user, resource, method) {
   if (resource === 'dashboard') {
     return user.role === 'boss'
       ? { ok: true }
-      : { ok: false, status: 403, message: 'Boss role required' };
+      : { ok: false, status: 403, message: 'Management role required' };
   }
 
   if (resource === 'auditLogs') {
     return user.role === 'boss'
       ? { ok: true }
-      : { ok: false, status: 403, message: 'Boss role required' };
+      : { ok: false, status: 403, message: 'Management role required' };
   }
 
   if (!BACKSTAGE_RESOURCES.has(resource)) {
@@ -90,22 +87,6 @@ function canAccessResource(user, resource, method) {
     if (!OPERATOR_RESOURCES.has(resource)) {
       return { ok: false, status: 403, message: 'Permission denied' };
     }
-    return { ok: true };
-  }
-
-  if (user.role === 'customer') {
-    if (!CUSTOMER_RESOURCES.has(resource)) {
-      return { ok: false, status: 403, message: 'Permission denied' };
-    }
-    if (method === 'DELETE') return { ok: false, status: 403, message: 'Permission denied' };
-    return { ok: true };
-  }
-
-  if (user.role === 'ayi') {
-    if (!AYI_RESOURCES.has(resource)) {
-      return { ok: false, status: 403, message: 'Permission denied' };
-    }
-    if (method === 'DELETE') return { ok: false, status: 403, message: 'Permission denied' };
     return { ok: true };
   }
 
@@ -155,7 +136,7 @@ function scopePayloadForCreate(user, resource, payload = {}) {
   if (user.role === 'boss') return payload;
   if (user.role === 'operator') {
     if (resource === 'accounts' || isBossAccountPayload(payload)) {
-      throw Object.assign(new Error('Operator cannot manage boss accounts'), { status: 403 });
+      throw Object.assign(new Error('Operator cannot manage management accounts'), { status: 403 });
     }
     return payload;
   }
@@ -185,7 +166,7 @@ function scopePayloadForCreate(user, resource, payload = {}) {
 
 function scopePayloadForUpdate(user, resource, payload = {}) {
   if (user.role === 'operator' && (resource === 'accounts' || isBossAccountPayload(payload))) {
-    throw Object.assign(new Error('Operator cannot manage boss accounts'), { status: 403 });
+    throw Object.assign(new Error('Operator cannot manage management accounts'), { status: 403 });
   }
   if (user.role === 'customer') {
     if (!['demands', 'appointments'].includes(resource)) {

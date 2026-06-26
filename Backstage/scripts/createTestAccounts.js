@@ -2,7 +2,7 @@ const bcrypt = require('bcryptjs');
 const db = require('../db');
 
 const DEFAULTS = {
-  boss: { username: 'boss.local', phone: '18800000001', profileTable: 'backstage_accounts', roleName: '老板端' },
+  boss: { username: 'boss.local', phone: '18800000001', profileTable: 'backstage_accounts', roleName: '管理端' },
   operator: { username: 'operator.local', phone: '18800000002', profileTable: 'backstage_accounts', roleName: '运营端' },
   customer: { username: 'customer.local', phone: '13800000001', profileTable: 'customers' },
   ayi: { username: 'ayi.local', phone: '13900000001', profileTable: 'ayis' }

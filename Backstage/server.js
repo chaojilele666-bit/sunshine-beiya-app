@@ -5,6 +5,8 @@ const db = require('./db');
 const accessControl = require('./accessControl');
 const authRepository = require('./repositories/authRepository');
 const backstageRepository = require('./repositories/backstageRepository');
+const companyProfileRepository = require('./repositories/companyProfileRepository');
+const demandMatchRepository = require('./repositories/demandMatchRepository');
 const resourceRepository = require('./repositories/resourceRepository');
 const serviceCatalogRepository = require('./repositories/serviceCatalogRepository');
 
@@ -13,6 +15,7 @@ const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, 'public');
 const DATA_FILE = path.join(ROOT, 'data.json');
 const STORE_UPLOAD_DIR = path.join(PUBLIC_DIR, 'uploads', 'stores');
+const SERVICE_UPLOAD_DIR = path.join(PUBLIC_DIR, 'uploads', 'service-modules');
 const loginAttempts = new Map();
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_MAX_ATTEMPTS = 10;
@@ -42,7 +45,7 @@ function send(res, status, body, type = 'application/json; charset=utf-8') {
     'Content-Type': type,
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Demand-Access-Token'
   });
   if (Buffer.isBuffer(body) || typeof body === 'string') {
     res.end(body);
@@ -71,6 +74,11 @@ function readBody(req) {
   });
 }
 
+function readDemandAccessToken(req) {
+  const token = req.headers['x-demand-access-token'];
+  return Array.isArray(token) ? token[0] : token;
+}
+
 function getRequestOrigin(req) {
   const protocol = req.headers['x-forwarded-proto'] || 'http';
   const host = req.headers.host || `localhost:${PORT}`;
@@ -88,7 +96,7 @@ function imageExtension(mime) {
   return 'png';
 }
 
-function saveStoreImage(dataUrl, storeId, fieldName) {
+function saveUploadImage(dataUrl, uploadDir, urlPrefix, filePrefix, recordId, fieldName) {
   const match = String(dataUrl).match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,([\s\S]+)$/);
   if (!match) {
     throw new Error('Invalid image data URL');
@@ -101,13 +109,22 @@ function saveStoreImage(dataUrl, storeId, fieldName) {
     throw new Error('Uploaded image is empty');
   }
 
-  fs.mkdirSync(STORE_UPLOAD_DIR, { recursive: true });
+  fs.mkdirSync(uploadDir, { recursive: true });
   const ext = imageExtension(mime);
-  const safeField = fieldName === 'managerImage' ? 'manager' : 'image';
-  const filename = `store-${storeId || 'new'}-${safeField}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}.${ext}`;
-  const filePath = path.join(STORE_UPLOAD_DIR, filename);
+  const safeField = String(fieldName || 'image').replace(/[^a-zA-Z0-9_-]/g, '-');
+  const filename = `${filePrefix}-${recordId || 'new'}-${safeField}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}.${ext}`;
+  const filePath = path.join(uploadDir, filename);
   fs.writeFileSync(filePath, buffer);
-  return `/uploads/stores/${filename}`;
+  return `${urlPrefix}/${filename}`;
+}
+
+function saveStoreImage(dataUrl, storeId, fieldName) {
+  const safeField = fieldName === 'managerImage' ? 'manager' : 'image';
+  return saveUploadImage(dataUrl, STORE_UPLOAD_DIR, '/uploads/stores', 'store', storeId, safeField);
+}
+
+function saveServiceModuleImage(dataUrl, moduleId, fieldName) {
+  return saveUploadImage(dataUrl, SERVICE_UPLOAD_DIR, '/uploads/service-modules', 'service-module', moduleId, fieldName);
 }
 
 function normalizeUploadUrl(value, req) {
@@ -132,6 +149,19 @@ function prepareStoreImagePayload(req, payload, id) {
   return next;
 }
 
+function prepareServiceModuleImagePayload(req, payload, id) {
+  const next = Object.assign({}, payload);
+  ['image', 'iconImage'].forEach((key) => {
+    if (!(key in next)) return;
+    if (isDataImage(next[key])) {
+      next[key] = saveServiceModuleImage(next[key], id, key);
+      return;
+    }
+    next[key] = normalizeUploadUrl(next[key], req);
+  });
+  return next;
+}
+
 function expandUploadUrl(req, value) {
   if (typeof value === 'string' && value.startsWith('/uploads/')) {
     return `${getRequestOrigin(req)}${value}`;
@@ -147,15 +177,30 @@ function expandStoreImages(req, store) {
   });
 }
 
+function expandServiceModuleImages(req, item) {
+  if (!item || typeof item !== 'object') return item;
+  return Object.assign({}, item, {
+    image: expandUploadUrl(req, item.image),
+    iconImage: expandUploadUrl(req, item.iconImage)
+  });
+}
+
 function expandResourceImages(req, resource, value) {
-  if (resource !== 'stores') return value;
-  if (Array.isArray(value)) return value.map((item) => expandStoreImages(req, item));
-  return expandStoreImages(req, value);
+  if (resource === 'stores') {
+    if (Array.isArray(value)) return value.map((item) => expandStoreImages(req, item));
+    return expandStoreImages(req, value);
+  }
+  if (resource === 'serviceModules') {
+    if (Array.isArray(value)) return value.map((item) => expandServiceModuleImages(req, item));
+    return expandServiceModuleImages(req, value);
+  }
+  return value;
 }
 
 function expandMiniprogramImages(req, data) {
   return Object.assign({}, data, {
-    stores: (data.stores || []).map((item) => expandStoreImages(req, item))
+    stores: (data.stores || []).map((item) => expandStoreImages(req, item)),
+    serviceModules: (data.serviceModules || []).map((item) => expandServiceModuleImages(req, item))
   });
 }
 
@@ -205,6 +250,18 @@ function sendAuthError(res, error) {
     code: error.code || 'AUTH_ERROR',
     error: error.message || 'Authentication failed'
   });
+}
+
+function sendApiError(res, error, fallbackMessage = 'Request failed') {
+  sendError(res, error.status || 400, fallbackMessage, error.message);
+}
+
+function requireBackstageUser(user) {
+  if (!accessControl.canUseBackstage(user)) {
+    const error = new Error('Backstage role required');
+    error.status = user ? 403 : 401;
+    throw error;
+  }
 }
 
 function nextId(list) {
@@ -337,7 +394,7 @@ async function handleApi(req, res) {
   const parts = req.url.split('?')[0].split('/').filter(Boolean);
   const resource = parts[1];
   const id = parts[2] ? Number(parts[2]) : null;
-  const allowed = ['accounts', 'ayis', 'demands', 'appointments', 'applications', 'orders', 'stores', 'serviceModules', 'banners', 'orderDispatches'];
+  const allowed = ['accounts', 'ayis', 'demands', 'appointments', 'applications', 'orders', 'stores', 'serviceModules', 'banners', 'orderDispatches', 'companyProfile'];
   const currentUser = await getCurrentUser(req);
 
   if (resource === 'auth') {
@@ -441,7 +498,30 @@ async function handleApi(req, res) {
     return;
   }
 
-  if (resource === 'miniprogram' && req.method === 'GET') {
+  if (resource === 'company-profile') {
+    const authz = accessControl.canAccessResource(currentUser, 'companyProfile', req.method);
+    if (!authz.ok) {
+      send(res, authz.status, { ok: false, error: authz.message });
+      return;
+    }
+    try {
+      if (req.method === 'GET') {
+        send(res, 200, await companyProfileRepository.getProfile());
+        return;
+      }
+      if (req.method === 'PUT') {
+        const body = await readBody(req);
+        send(res, 200, await companyProfileRepository.updateProfile(body, getActor(req, currentUser)));
+        return;
+      }
+      send(res, 405, { error: 'Method not allowed' });
+    } catch (error) {
+      sendError(res, error.status || 400, 'Company profile failed', error.message);
+    }
+    return;
+  }
+
+  if (resource === 'miniprogram' && req.method === 'GET' && parts.length === 2) {
     try {
       send(res, 200, expandMiniprogramImages(req, await backstageRepository.getMiniprogramData()));
     } catch (error) {
@@ -451,7 +531,7 @@ async function handleApi(req, res) {
         .filter((item) => item.visible !== false)
         .sort((a, b) => Number(a.sort || 0) - Number(b.sort || 0));
       const certifiedAyis = (data.ayis || []).filter((item) => item.status === '已认证');
-      const openDemands = (data.demands || []).filter((item) => !['已成交', '已取消'].includes(item.status));
+      const openDemands = (data.demands || []).filter((item) => !['已成交', '已取消', '已关闭'].includes(item.status));
 
       send(res, 200, {
         source: 'data-json-fallback',
@@ -460,9 +540,112 @@ async function handleApi(req, res) {
         ayis: certifiedAyis,
         demands: openDemands,
         stores: visibleStores.map((item) => expandStoreImages(req, item)),
-        serviceModules: visibleModules,
-        banners: (data.banners || []).filter((item) => item.visible !== false).sort((a, b) => Number(a.sort || 0) - Number(b.sort || 0))
+        serviceModules: visibleModules.map((item) => expandServiceModuleImages(req, item)),
+        banners: (data.banners || []).filter((item) => item.visible !== false).sort((a, b) => Number(a.sort || 0) - Number(b.sort || 0)),
+        companyProfile: data.companyProfile || {}
       });
+    }
+    return;
+  }
+
+  if (resource === 'miniprogram' && parts[2] === 'demands' && req.method === 'POST' && parts.length === 3) {
+    try {
+      const body = await readBody(req);
+      if (!body.customerName || !body.phone || !body.address || !body.startTime) {
+        send(res, 400, { ok: false, error: 'customerName, phone, address and startTime are required' });
+        return;
+      }
+      const result = await demandMatchRepository.createCustomerDemand(body);
+      send(res, 201, {
+        ok: true,
+        demandId: result.demand.id,
+        accessToken: result.accessToken,
+        demand: result.demand
+      });
+    } catch (error) {
+      sendApiError(res, error, 'Create demand failed');
+    }
+    return;
+  }
+
+  if (resource === 'miniprogram' && parts[2] === 'demands' && parts[3] && req.method === 'GET') {
+    try {
+      const demandId = Number(parts[3]);
+      const accessToken = readDemandAccessToken(req);
+      if (!accessToken) {
+        send(res, 400, { ok: false, error: 'X-Demand-Access-Token header is required' });
+        return;
+      }
+      if (parts[4] === 'matches') {
+        send(res, 200, {
+          ok: true,
+          demandId,
+          matches: await demandMatchRepository.listPublicMatches(demandId, accessToken)
+        });
+        return;
+      }
+      if (parts.length === 4) {
+        const demand = await demandMatchRepository.findCustomerDemand(demandId, accessToken);
+        if (!demand) {
+          send(res, 403, { ok: false, error: 'Demand token mismatch' });
+          return;
+        }
+        send(res, 200, { ok: true, demand });
+        return;
+      }
+    } catch (error) {
+      sendApiError(res, error, 'Load demand failed');
+      return;
+    }
+  }
+
+  if (resource === 'miniprogram' && parts[2] === 'demand-matches' && parts[3] && parts[4] === 'decision' && req.method === 'POST') {
+    try {
+      const body = await readBody(req);
+      const accessToken = readDemandAccessToken(req);
+      if (!accessToken) {
+        send(res, 400, { ok: false, error: 'X-Demand-Access-Token header is required' });
+        return;
+      }
+      const match = await demandMatchRepository.decideMatch(Number(parts[3]), Object.assign({}, body, { accessToken }));
+      send(res, 200, { ok: true, match });
+    } catch (error) {
+      sendApiError(res, error, 'Update match decision failed');
+    }
+    return;
+  }
+
+  if (resource === 'demands' && id && parts[3] === 'matches') {
+    try {
+      requireBackstageUser(currentUser);
+      if (req.method === 'GET') {
+        send(res, 200, {
+          ok: true,
+          demandId: id,
+          matches: await demandMatchRepository.listBackstageMatches(id)
+        });
+        return;
+      }
+      if (req.method === 'POST') {
+        const body = await readBody(req);
+        const match = await demandMatchRepository.createBackstageMatch(id, body, getActor(req, currentUser));
+        send(res, 201, { ok: true, match });
+        return;
+      }
+      send(res, 405, { error: 'Method not allowed' });
+    } catch (error) {
+      sendApiError(res, error, 'Demand matching failed');
+    }
+    return;
+  }
+
+  if (resource === 'demandMatches' && id && parts[3] === 'expire' && req.method === 'POST') {
+    try {
+      requireBackstageUser(currentUser);
+      const match = await demandMatchRepository.expireBackstageMatch(id, getActor(req, currentUser));
+      send(res, 200, { ok: true, match });
+    } catch (error) {
+      sendApiError(res, error, 'Expire match failed');
     }
     return;
   }
@@ -568,7 +751,11 @@ async function handleApi(req, res) {
     try {
       const body = await readBody(req);
       const payload = accessControl.scopePayloadForCreate(currentUser, resource, body);
-      const preparedPayload = resource === 'stores' ? prepareStoreImagePayload(req, payload) : payload;
+      const preparedPayload = resource === 'stores'
+        ? prepareStoreImagePayload(req, payload)
+        : resource === 'serviceModules'
+          ? prepareServiceModuleImagePayload(req, payload)
+          : payload;
       const record = await resourceRepository.create(resource, preparedPayload, getActor(req, currentUser));
       send(res, 201, expandResourceImages(req, resource, record));
     } catch (error) {
@@ -590,7 +777,11 @@ async function handleApi(req, res) {
         return;
       }
       const payload = accessControl.scopePayloadForUpdate(currentUser, resource, body);
-      const preparedPayload = resource === 'stores' ? prepareStoreImagePayload(req, payload, id) : payload;
+      const preparedPayload = resource === 'stores'
+        ? prepareStoreImagePayload(req, payload, id)
+        : resource === 'serviceModules'
+          ? prepareServiceModuleImagePayload(req, payload, id)
+          : payload;
       const record = await resourceRepository.update(resource, id, preparedPayload, getActor(req, currentUser));
       if (!record) {
         send(res, 404, { error: 'Record not found' });

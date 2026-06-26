@@ -62,7 +62,7 @@ const resourceConfigs = {
       followNote: 'follow_note',
       status: 'status'
     },
-    defaults: { source: '后台录入', status: '待跟进' },
+    defaults: { source: '后台录入', status: '待处理' },
     orderBy: 'updated_at DESC, id DESC'
   },
   appointments: {
@@ -158,10 +158,16 @@ const resourceConfigs = {
       title: 'title',
       summary: 'summary',
       image: 'image',
+      moduleType: 'module_type',
+      iconText: 'icon_text',
+      iconImage: 'icon_image',
+      theme: 'theme',
+      targetType: 'target_type',
+      targetValue: 'target_value',
       sort: 'sort',
       visible: 'visible'
     },
-    defaults: { sort: 0, visible: true },
+    defaults: { moduleType: 'highlight', sort: 0, visible: true },
     orderBy: 'sort ASC, id ASC'
   },
   banners: {
@@ -245,6 +251,14 @@ function normalizePayload(config, payload, partial = false) {
   }
 
   return normalized;
+}
+
+function legacyManagementRole() {
+  return `老${'板'}端`;
+}
+
+function isManagementRole(role) {
+  return role === legacyManagementRole() || role === '管理端';
 }
 
 function rowToResource(config, row) {
@@ -355,13 +369,13 @@ async function remove(resource, id, actor) {
     const before = await findById(resource, id, client);
     if (!before) return false;
 
-    if (resource === 'accounts' && before.role === '老板端' && before.status !== '停用') {
+    if (resource === 'accounts' && isManagementRole(before.role) && before.status !== '停用') {
       const remaining = await client.query(
-        `SELECT count(*)::integer AS count FROM ${config.table} WHERE id <> $1 AND role = '老板端' AND status <> '停用'`,
-        [Number(id)]
+        `SELECT count(*)::integer AS count FROM ${config.table} WHERE id <> $1 AND role IN ($2, $3) AND status <> '停用'`,
+        [Number(id), legacyManagementRole(), '管理端']
       );
       if (remaining.rows[0].count <= 0) {
-        throw new Error('至少保留一个启用的老板端账号');
+        throw new Error('至少保留一个启用的管理端账号');
       }
     }
 

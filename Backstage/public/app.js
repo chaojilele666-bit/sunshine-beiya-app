@@ -1,25 +1,38 @@
 const resources = {
   dashboard: {
-    title: '经营看板',
-    desc: '老板端查看点击量、客户信息量、阿姨信息量、发布量和业务状态汇总。',
+    title: '管理看板',
+    desc: '管理端查看点击量、客户信息量、阿姨信息量、发布量和业务状态汇总。',
     custom: 'dashboard'
   },
   accounts: {
     title: '账号权限',
-    desc: '规划正式登录入口，并按客户端、阿姨端、运营端、老板端分组管理真实账号。',
+    desc: '规划后台正式登录入口，并按运营端、管理端分组管理真实账号。',
     fields: [
       ['name', '姓名/账号名称'],
       ['phone', '手机号/登录账号'],
-      ['role', '账号角色', 'select', ['客户端', '阿姨端', '运营端', '老板端']],
+      ['role', '账号角色', 'select', ['运营端', '管理端']],
       ['entry', '进入端口', 'select', ['微信小程序', '后台管理']],
       ['permissions', '权限说明，逗号分隔'],
       ['status', '状态', 'select', ['启用', '停用']],
       ['note', '备注', 'textarea']
     ],
     summary: (item) => [
-      `${item.role || '-'} / ${item.entry || '-'}`,
+      `${displayRoleName(item.role)} / ${item.entry || '-'}`,
       `权限：${Array.isArray(item.permissions) ? item.permissions.join('、') : item.permissions || '-'}`,
       `状态：${item.status || '-'}`
+    ]
+  },
+  companyProfile: {
+    title: '公司基础信息',
+    desc: '统一维护小程序展示的公司名称、简介、客服电话、地址和营业时间。',
+    custom: 'companyProfile',
+    fields: [
+      ['companyName', '公司名称'],
+      ['shortName', '公司简称'],
+      ['introduction', '公司简介', 'textarea'],
+      ['customerServicePhone', '客服电话'],
+      ['address', '公司地址', 'textarea'],
+      ['businessHours', '营业时间']
     ]
   },
   banners: {
@@ -59,6 +72,7 @@ const resources = {
       ['featured', '是否金牌推荐', 'boolean'],
       ['featuredTitle', '推荐称号'],
       ['status', '状态', 'select', ['待审核', '已认证', '已下架']],
+      ['visible', '是否在小程序展示', 'visibility'],
       ['idCardImage', '身份证照片', 'image'],
       ['healthCertImage', '健康证照片', 'image'],
       ['skillCertImage', '技能证书照片', 'image'],
@@ -85,7 +99,7 @@ const resources = {
       ['familyInfo', '家庭情况', 'textarea'],
       ['consultant', '跟进顾问'],
       ['followNote', '跟进备注', 'textarea'],
-      ['status', '状态', 'select', ['待跟进', '待匹配', '已匹配', '已面试', '已成交', '已取消']]
+      ['status', '状态', 'select', ['待处理', '已联系', '匹配中', '已匹配', '已关闭']]
     ],
     summary: (item) => [
       `${item.serviceType || '-'} / ${item.budget || '-'}`,
@@ -161,7 +175,7 @@ const resources = {
   },
   orderDispatches: {
     title: '人工派单',
-    desc: '记录订单人工派单和更换阿姨过程，供老板端查看最近操作。',
+    desc: '记录订单人工派单和更换阿姨过程，供管理端查看最近操作。',
     fields: [
       ['orderId', '订单ID', 'number'],
       ['orderNo', '订单编号'],
@@ -175,7 +189,7 @@ const resources = {
     summary: (item) => [
       `${item.orderNo || item.orderId || '-'} / ${item.ayiName || '-'}`,
       `${item.dispatchType || '-'} / ${item.assignedBy || '-'}`,
-      `状态：${item.status || '-'}`
+      `状态：${item.status || '-'} / ${item.visible === false ? '小程序下架' : '小程序上架'}`
     ]
   },
   stores: {
@@ -211,17 +225,25 @@ const resources = {
     ]
   },
   serviceModules: {
-    title: '公司服务',
-    desc: '维护客户端“公司服务”卡片，后续小程序从这里读取。',
+    title: '服务中心',
+    desc: '维护客户端首页“服务中心”的服务说明和具体家政服务入口。',
     fields: [
-      ['title', '模块标题'],
-      ['summary', '模块说明', 'textarea'],
+      ['title', '显示名称'],
+      ['summary', '说明文字', 'textarea'],
+      ['moduleType', '项目类型', 'select', ['highlight', 'service', 'shortcut']],
+      ['iconText', '文字图标'],
+      ['iconImage', '贴图地址', 'image'],
+      ['theme', '视觉主题', 'select', ['green', 'mint', 'rose', 'blue', 'warm']],
+      ['targetType', '点击行为', 'select', ['none', 'find_ayi', 'demand', 'customer_service', 'about', 'service', 'store', '无跳转', '找阿姨', '发布需求', '门店', '公司介绍']],
+      ['targetValue', '点击参数'],
       ['image', '展示图片', 'image'],
       ['sort', '排序', 'number'],
       ['visible', '是否显示', 'boolean']
     ],
     summary: (item) => [
+      `${displayModuleType(item.moduleType || 'highlight')} / ${item.iconText || '-'}`,
       item.summary || '-',
+      `点击：${item.targetType || '无跳转'}`,
       `排序：${item.sort || 0}`,
       `显示：${String(item.visible)}`
     ]
@@ -229,6 +251,7 @@ const resources = {
 };
 
 let currentResource = 'accounts';
+let currentRoute = 'home';
 let currentRecord = null;
 let cache = [];
 let pendingImages = {};
@@ -236,6 +259,48 @@ let currentUser = null;
 let authToken = null;
 let allowedResources = [];
 let expandedAccountRole = null;
+
+const roleDisplayMap = {
+  管理端: '管理端',
+  运营端: '运营端',
+  boss: '管理端',
+  operator: '运营端'
+};
+
+roleDisplayMap[`老${'板'}端`] = '管理端';
+
+const rolePersistMap = {
+  管理端: '管理端',
+  运营端: '运营端'
+};
+
+const routeToResourceMap = {
+  dashboard: 'dashboard',
+  accounts: 'accounts',
+  company: 'companyProfile',
+  ayis: 'ayis',
+  demands: 'demands',
+  appointments: 'appointments',
+  applications: 'applications',
+  orders: 'orders',
+  dispatches: 'orderDispatches',
+  stores: 'stores',
+  services: 'serviceModules',
+  banners: 'banners'
+};
+
+const resourceToRouteMap = Object.entries(routeToResourceMap).reduce((result, [route, resource]) => {
+  result[resource] = route;
+  return result;
+}, {});
+
+function displayRoleName(role) {
+  return roleDisplayMap[role] || role || '-';
+}
+
+function normalizeRoleForSave(role) {
+  return rolePersistMap[role] || role;
+}
 
 const list = document.querySelector('#list');
 const form = document.querySelector('#form');
@@ -247,25 +312,14 @@ const formTitle = document.querySelector('#formTitle');
 const loginForm = document.querySelector('#loginForm');
 const loginTip = document.querySelector('#loginTip');
 const currentUserLabel = document.querySelector('#currentUser');
+const backHomeBtn = document.querySelector('#backHomeBtn');
 
 const roleAccess = {
-  boss: ['dashboard', 'accounts', 'ayis', 'demands', 'appointments', 'applications', 'orders', 'orderDispatches', 'stores', 'serviceModules', 'banners'],
+  boss: ['dashboard', 'accounts', 'companyProfile', 'ayis', 'demands', 'appointments', 'applications', 'orders', 'orderDispatches', 'stores', 'serviceModules', 'banners'],
   operator: ['ayis', 'demands', 'appointments', 'applications', 'orders', 'orderDispatches', 'stores', 'serviceModules', 'banners']
 };
 
 const accountGroups = [
-  {
-    role: '客户端',
-    title: '客户端账号',
-    entry: '微信小程序',
-    desc: '客户在小程序里发布需求、预约阿姨、查看自己的需求。'
-  },
-  {
-    role: '阿姨端',
-    title: '阿姨端账号',
-    entry: '微信小程序',
-    desc: '阿姨在小程序里完善资料、上传证件、查看工作、申请接单。'
-  },
   {
     role: '运营端',
     title: '后台运营端账号',
@@ -273,10 +327,10 @@ const accountGroups = [
     desc: '员工进入后台，维护阿姨、客户需求、面试、接单、门店和公司内容。'
   },
   {
-    role: '老板端',
-    title: '老板端账号',
+    role: '管理端',
+    title: '管理端账号',
     entry: '后台管理',
-    desc: '老板进入后台，查看全部数据、经营看板、订单和账号权限。'
+    desc: '管理端进入后台，查看全部数据、管理看板、订单和账号权限。'
   }
 ];
 
@@ -302,6 +356,30 @@ function normalizeValue(key, value) {
   return value;
 }
 
+function displayModuleType(value) {
+  const map = {
+    highlight: '服务说明',
+    service: '家政服务',
+    shortcut: '首页快捷入口'
+  };
+  return map[value] || value || '服务说明';
+}
+
+function displaySelectOption(key, option) {
+  if (key === 'moduleType') return displayModuleType(option);
+  const targetMap = {
+    none: '无跳转',
+    find_ayi: '找阿姨',
+    demand: '发布需求',
+    customer_service: '客服咨询',
+    about: '公司介绍',
+    service: '服务页',
+    store: '门店'
+  };
+  if (key === 'targetType') return targetMap[option] || option;
+  return option;
+}
+
 function escapeHtml(value) {
   return String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -311,8 +389,8 @@ function escapeHtml(value) {
 }
 
 function getStatusClass(status) {
-  if (['已认证', '已匹配', '已面试', '已成交', '启用', true].includes(status)) return 'ok';
-  if (['已下架', '已取消', '停用', false].includes(status)) return 'off';
+  if (['已认证', '已匹配', '客户已确认', '已面试', '已成交', '启用', true].includes(status)) return 'ok';
+  if (['已下架', '已关闭', '已失效', '客户已拒绝', '已取消', '停用', false].includes(status)) return 'off';
   return '';
 }
 
@@ -351,6 +429,27 @@ function getAllowedResources() {
   return roleAccess[currentUser.role] || [];
 }
 
+function getRouteFromHash() {
+  return (location.hash || '#/home').replace(/^#\/?/, '') || 'home';
+}
+
+function setRoute(route) {
+  const next = `#/${route || 'home'}`;
+  if (location.hash === next) {
+    renderRoute();
+    return;
+  }
+  location.hash = next;
+}
+
+function markActiveRoute(route) {
+  document.body.classList.toggle('route-home', route === 'home');
+  document.body.classList.toggle('route-module', route !== 'home');
+  document.querySelectorAll('.tab').forEach((tab) => {
+    tab.classList.toggle('active', tab.dataset.route === route);
+  });
+}
+
 function applyAuthShell() {
   if (!currentUser || !roleAccess[currentUser.role]) {
     document.body.classList.remove('is-authed');
@@ -358,19 +457,21 @@ function applyAuthShell() {
   }
 
   document.body.classList.add('is-authed');
-  currentUserLabel.textContent = `${currentUser.username || currentUser.phone} / ${currentUser.role}`;
+  currentUserLabel.textContent = `${currentUser.username || currentUser.phone} / ${displayRoleName(currentUser.role)}`;
   const allowed = getAllowedResources();
   document.querySelectorAll('.tab').forEach((tab) => {
-    tab.hidden = !allowed.includes(tab.dataset.resource);
+    tab.hidden = tab.dataset.route !== 'home' && !allowed.includes(tab.dataset.resource);
   });
 }
 
 async function loadResource(resource = currentResource) {
   const allowed = getAllowedResources();
   if (currentUser && allowed.length && !allowed.includes(resource)) {
-    resource = allowed[0];
+    renderHome();
+    return;
   }
   currentResource = resource;
+  currentRoute = resourceToRouteMap[resource] || resource;
   currentRecord = null;
   const meta = resources[resource];
   sectionTitle.textContent = meta.title;
@@ -378,18 +479,75 @@ async function loadResource(resource = currentResource) {
   formTitle.textContent = `新增${meta.title}`;
   document.querySelector('#addBtn').hidden = Boolean(meta.custom);
   closeEditor();
-  document.querySelectorAll('.tab').forEach((tab) => {
-    tab.classList.toggle('active', tab.dataset.resource === resource);
-  });
+  markActiveRoute(currentRoute);
   if (meta.custom === 'dashboard') {
     const dashboard = await api('dashboard');
     renderDashboard(dashboard);
-    form.innerHTML = '<p class="muted">经营看板为老板端查看页，不需要在右侧编辑。</p>';
+    form.innerHTML = '<p class="muted">管理看板为管理端查看页，不需要在右侧编辑。</p>';
     formTitle.textContent = '看板说明';
+    return;
+  }
+  if (meta.custom === 'companyProfile') {
+    const profile = await api('company-profile');
+    cache = profile ? [profile] : [];
+    renderCompanyProfile(profile || {});
+    renderCompanyProfileForm(profile || {});
+    editor.classList.add('is-open');
+    layout.classList.add('editor-open');
     return;
   }
   cache = await api(resource);
   renderList();
+}
+
+function renderHome() {
+  currentRoute = 'home';
+  currentRecord = null;
+  cache = [];
+  closeEditor();
+  markActiveRoute('home');
+  sectionTitle.textContent = '后台功能首页';
+  sectionDesc.textContent = '选择一个功能模块进入独立页面视图。首页只展示入口，不加载业务列表。';
+  document.querySelector('#addBtn').hidden = true;
+  formTitle.textContent = '页面说明';
+  form.innerHTML = '<p class="muted">点击左侧导航或下方入口卡片进入对应模块。进入模块后，只显示当前模块内容。</p>';
+
+  const cards = getAllowedResources().map((resource) => {
+    const meta = resources[resource];
+    const route = resourceToRouteMap[resource] || resource;
+    return `
+      <button class="module-card" data-action="route-card" data-route="${escapeHtml(route)}">
+        <span>${escapeHtml(meta.title)}</span>
+        <small>${escapeHtml(meta.desc)}</small>
+      </button>
+    `;
+  }).join('');
+
+  list.innerHTML = `
+    <div class="home-grid">
+      ${cards || '<p class="muted">当前账号暂无可进入的后台模块。</p>'}
+    </div>
+  `;
+}
+
+async function renderRoute() {
+  if (!currentUser || !roleAccess[currentUser.role]) return;
+  const route = getRouteFromHash();
+  if (route === 'home') {
+    renderHome();
+    return;
+  }
+  const resource = routeToResourceMap[route];
+  if (!resource) {
+    setRoute('home');
+    return;
+  }
+  const allowed = getAllowedResources();
+  if (!allowed.includes(resource)) {
+    setRoute('home');
+    return;
+  }
+  await loadResource(resource);
 }
 
 function openEditor(record = null) {
@@ -402,6 +560,8 @@ function openEditor(record = null) {
 function closeEditor() {
   currentRecord = null;
   pendingImages = {};
+  form.dataset.mode = '';
+  form.dataset.demandId = '';
   editor.classList.remove('is-open');
   layout.classList.remove('editor-open');
   formTitle.textContent = '新增/编辑';
@@ -434,6 +594,41 @@ function renderDashboard(data) {
   `;
 }
 
+function renderCompanyProfile(profile) {
+  list.innerHTML = `
+    <article class="record">
+      <div>
+        <div class="record-title">${escapeHtml(profile.companyName || '未填写公司名称')}</div>
+        <div class="record-line">简称：${escapeHtml(profile.shortName || '-')}</div>
+        <div class="record-line">客服电话：${escapeHtml(profile.customerServicePhone || '未配置')}</div>
+        <div class="record-line">地址：${escapeHtml(profile.address || '-')}</div>
+        <div class="record-line">营业时间：${escapeHtml(profile.businessHours || '-')}</div>
+        <div class="record-line">${escapeHtml(profile.introduction || '')}</div>
+      </div>
+    </article>
+    <p class="muted">公司基础信息为单条配置。管理端可在右侧表单中直接修改并保存，运营端无权访问。</p>
+  `;
+}
+
+function renderCompanyProfileForm(profile) {
+  currentRecord = profile;
+  pendingImages = {};
+  form.dataset.mode = 'company-profile';
+  formTitle.textContent = '编辑公司基础信息';
+  form.innerHTML = resources.companyProfile.fields.map(([key, label, type = 'text']) => {
+    const value = profile[key] || '';
+    if (type === 'textarea') {
+      return `<div class="field"><label>${label}</label><textarea name="${key}">${escapeHtml(value)}</textarea></div>`;
+    }
+    return `<div class="field"><label>${label}</label><input type="${type}" name="${key}" value="${escapeHtml(value)}" /></div>`;
+  }).join('') + `
+    <div class="form-actions">
+      <button type="submit">保存修改</button>
+      <button type="button" class="secondary" id="company-profile-reset">取消修改</button>
+    </div>
+  `;
+}
+
 function isEntrancePlanAccount(item) {
   return ['客户入口', '阿姨入口'].includes(item.name);
 }
@@ -451,12 +646,13 @@ function renderPermissionTags(permissions) {
 function renderAccountRow(item) {
   const title = item.name || `未命名${item.role || '账号'} #${item.id}`;
   const status = item.status || '启用';
+  const roleText = displayRoleName(item.role);
 
   return `
     <article class="account-row">
       <div>
         <div class="record-title">${escapeHtml(title)}</div>
-        <div class="record-line">登录账号：${escapeHtml(item.phone || '未填写')} / ${escapeHtml(item.entry || '-')}</div>
+        <div class="record-line">登录账号：${escapeHtml(item.phone || '未填写')} / ${escapeHtml(roleText)} / ${escapeHtml(item.entry || '-')}</div>
         <div class="permission-list">${renderPermissionTags(item.permissions)}</div>
         ${item.note ? `<div class="record-line">${escapeHtml(item.note)}</div>` : ''}
         <div class="status-badge ${getStatusClass(status)}">${escapeHtml(status)}</div>
@@ -480,7 +676,7 @@ function renderAccountsList() {
 
   const realAccounts = cache.filter((item) => !isEntrancePlanAccount(item));
   const groupsHtml = accountGroups.map((group) => {
-    const rows = realAccounts.filter((item) => item.role === group.role);
+    const rows = realAccounts.filter((item) => displayRoleName(item.role) === group.role);
     const isExpanded = expandedAccountRole === group.role;
     return `
       <section class="account-group ${isExpanded ? 'is-expanded' : ''}">
@@ -501,7 +697,7 @@ function renderAccountsList() {
 
   list.innerHTML = `
     <div class="account-note">
-      新增账号会按照“账号角色”自动归到下面对应分组。比如新增“运营端”，就会显示在“后台运营端账号”里。
+      新增账号会按照“账号角色”自动归到下面对应分组。后台登录身份只展示运营端和管理端。
     </div>
     <div class="account-plan-grid">${planHtml}</div>
     <div class="account-groups">${groupsHtml}</div>
@@ -528,6 +724,9 @@ function renderList() {
         : '';
     const isEditing = currentRecord && currentRecord.id === item.id;
     const editLabel = currentResource === 'ayis' ? '编辑资料' : '编辑';
+    const demandMatchButton = currentResource === 'demands'
+      ? `<button data-action="match-demand" data-id="${item.id}">推荐阿姨</button>`
+      : '';
     return `
       <article class="record ${needsThumb ? 'has-thumb' : ''} ${isEditing ? 'is-editing' : ''}">
         ${image}
@@ -537,12 +736,71 @@ function renderList() {
           ${badge}
         </div>
         <div class="record-actions">
+          ${demandMatchButton}
           <button data-action="edit" data-id="${item.id}">${editLabel}</button>
           <button class="delete" data-action="delete" data-id="${item.id}">删除</button>
         </div>
       </article>
     `;
   }).join('') || '<p class="muted">暂无数据，点击新增开始录入。</p>';
+}
+
+function isCertifiedAyi(item) {
+  return ['已认证', 'approved'].includes(item.status) && item.visible !== false;
+}
+
+async function openDemandMatchPanel(record) {
+  currentRecord = record;
+  form.dataset.mode = 'demand-match';
+  form.dataset.demandId = record.id;
+  editor.classList.add('is-open');
+  layout.classList.add('editor-open');
+  formTitle.textContent = `推荐阿姨：${record.customerName || record.name || `需求 ${record.id}`}`;
+
+  const [matchResult, ayis] = await Promise.all([
+    api(`demands/${record.id}/matches`),
+    api('ayis')
+  ]);
+  const certifiedAyis = (ayis || []).filter(isCertifiedAyi);
+  const options = certifiedAyis.map((ayi) => (
+    `<option value="${ayi.id}">${escapeHtml(ayi.name || `阿姨 ${ayi.id}`)} / ${escapeHtml(ayi.serviceType || '-')} / ${escapeHtml(ayi.phone || '-')}</option>`
+  )).join('');
+  const matchRows = (matchResult.matches || []).map((match) => `
+    <div class="match-row">
+      <div>
+        <strong>${escapeHtml(match.ayiName || `阿姨 ${match.ayiId}`)}</strong>
+        <span>${escapeHtml(match.serviceType || '-')}</span>
+        <span class="status-badge ${getStatusClass(match.status)}">${escapeHtml(match.status)}</span>
+        ${match.recommendNote ? `<div class="record-line">${escapeHtml(match.recommendNote)}</div>` : ''}
+      </div>
+      ${match.status === '已推荐' ? `<button type="button" class="secondary" data-action="expire-match" data-id="${match.id}">标记失效</button>` : ''}
+    </div>
+  `).join('') || '<p class="muted">暂未推荐阿姨。</p>';
+
+  form.innerHTML = `
+    <section class="match-panel">
+      <div class="record-title">${escapeHtml(record.customerName || '-')} / ${escapeHtml(record.serviceType || '-')}</div>
+      <div class="record-line">电话：${escapeHtml(record.phone || '-')}</div>
+      <div class="record-line">地址：${escapeHtml(`${record.city || ''} ${record.address || ''}`.trim() || '-')}</div>
+      <div class="record-line">预算：${escapeHtml(record.budget || '-')} / 上户：${escapeHtml(record.startTime || '-')}</div>
+      <div class="record-line">状态：${escapeHtml(record.status || '-')}</div>
+      <h3>已推荐阿姨</h3>
+      <div class="match-list">${matchRows}</div>
+      <h3>新增推荐</h3>
+      <div class="field">
+        <label>选择已认证阿姨</label>
+        <select name="ayiId">${options}</select>
+      </div>
+      <div class="field">
+        <label>推荐说明</label>
+        <textarea name="recommendNote" placeholder="说明推荐原因、匹配点和注意事项"></textarea>
+      </div>
+      <div class="form-actions">
+        <button type="submit" ${options ? '' : 'disabled'}>保存推荐</button>
+        <button type="button" class="secondary" id="clearBtn">关闭</button>
+      </div>
+    </section>
+  `;
 }
 
 function renderForm(record = null) {
@@ -552,14 +810,14 @@ function renderForm(record = null) {
   const recordName = record ? (record.name || record.customerName || record.title || `记录 ${record.id}`) : '';
   formTitle.textContent = record ? `编辑${meta.title}：${recordName}` : `新增${meta.title}`;
   const fields = meta.fields.map(([key, label, type = 'text', options = []]) => {
-    const raw = record ? record[key] : '';
+    const raw = record ? (key === 'role' ? displayRoleName(record[key]) : record[key]) : '';
     const value = Array.isArray(raw) ? raw.join(', ') : raw || '';
     if (type === 'textarea') {
       return `<div class="field"><label>${label}</label><textarea name="${key}">${escapeHtml(value)}</textarea></div>`;
     }
     if (type === 'select') {
       const optionHtml = options.map((option) => (
-        `<option value="${escapeHtml(option)}" ${String(value) === String(option) ? 'selected' : ''}>${escapeHtml(option)}</option>`
+        `<option value="${escapeHtml(option)}" ${String(value) === String(option) ? 'selected' : ''}>${escapeHtml(displaySelectOption(key, option))}</option>`
       )).join('');
       return `<div class="field"><label>${label}</label><select name="${key}">${optionHtml}</select></div>`;
     }
@@ -570,6 +828,17 @@ function renderForm(record = null) {
           <select name="${key}">
             <option value="true" ${value === true || value === 'true' || value === '' ? 'selected' : ''}>是</option>
             <option value="false" ${value === false || value === 'false' ? 'selected' : ''}>否</option>
+          </select>
+        </div>
+      `;
+    }
+    if (type === 'visibility') {
+      return `
+        <div class="field">
+          <label>${label}</label>
+          <select name="${key}">
+            <option value="true" ${value === true || value === 'true' || value === '' ? 'selected' : ''}>上架</option>
+            <option value="false" ${value === false || value === 'false' ? 'selected' : ''}>下架</option>
           </select>
         </div>
       `;
@@ -601,11 +870,12 @@ function renderForm(record = null) {
 
 document.querySelector('.tabs').addEventListener('click', (event) => {
   const tab = event.target.closest('.tab');
-  if (tab) loadResource(tab.dataset.resource);
+  if (tab) setRoute(tab.dataset.route || 'home');
 });
 
-document.querySelector('#refreshBtn').addEventListener('click', () => loadResource());
+document.querySelector('#refreshBtn').addEventListener('click', () => renderRoute());
 document.querySelector('#addBtn').addEventListener('click', () => openEditor());
+backHomeBtn.addEventListener('click', () => setRoute('home'));
 document.querySelector('#logoutBtn').addEventListener('click', async () => {
   try {
     await api('auth/logout', { method: 'POST' });
@@ -634,12 +904,12 @@ loginForm.addEventListener('submit', async (event) => {
     currentUser = me.user;
     allowedResources = me.allowedResources || [];
     if (!me.canUseBackstage) {
-      clearAuth('该账号不能进入后台，请使用运营或老板账号。');
+      clearAuth('该账号不能进入后台，请使用运营端或管理端账号。');
       return;
     }
     loginForm.reset();
     applyAuthShell();
-    await loadResource(getAllowedResources()[0]);
+    setRoute('home');
   } catch (error) {
     loginTip.textContent = '登录失败，请检查账号、密码或账号状态。';
   }
@@ -648,6 +918,10 @@ loginForm.addEventListener('submit', async (event) => {
 list.addEventListener('click', async (event) => {
   const button = event.target.closest('button');
   if (!button) return;
+  if (button.dataset.action === 'route-card') {
+    setRoute(button.dataset.route || 'home');
+    return;
+  }
   if (button.dataset.action === 'toggle-account-group') {
     expandedAccountRole = expandedAccountRole === button.dataset.role ? null : button.dataset.role;
     renderAccountsList();
@@ -664,17 +938,30 @@ list.addEventListener('click', async (event) => {
     renderList();
     return;
   }
+  if (button.dataset.action === 'match-demand') {
+    const record = cache.find((item) => item.id === id);
+    if (!record) {
+      alert('没有找到这条需求，请刷新后再试。');
+      return;
+    }
+    try {
+      await openDemandMatchPanel(record);
+    } catch (error) {
+      alert(error.message || '加载推荐信息失败');
+    }
+    return;
+  }
   if (button.dataset.action === 'delete' && confirm('确定删除这条数据？')) {
     const target = cache.find((item) => item.id === id);
     if (currentResource === 'accounts') {
       if (currentUser && target && target.id === currentUser.id) {
-        alert('不能删除当前正在登录的账号。你可以先新建另一个老板账号，再切换过去处理。');
+        alert('不能删除当前正在登录的账号。你可以先新建另一个管理端账号，再切换过去处理。');
         return;
       }
-      if (target && target.role === '老板端') {
-        const bossAccounts = cache.filter((item) => item.role === '老板端' && item.status !== '停用');
-        if (bossAccounts.length <= 1) {
-          alert('至少保留一个老板端账号，否则后台会进不去。');
+      if (target && displayRoleName(target.role) === '管理端') {
+        const managementAccounts = cache.filter((item) => displayRoleName(item.role) === '管理端' && item.status !== '停用');
+        if (managementAccounts.length <= 1) {
+          alert('至少保留一个管理端账号，否则后台会进不去。');
           return;
         }
       }
@@ -690,7 +977,19 @@ list.addEventListener('click', async (event) => {
 });
 
 form.addEventListener('click', (event) => {
+  if (event.target.id === 'company-profile-reset') {
+    renderCompanyProfileForm(currentRecord || {});
+    return;
+  }
   if (event.target.id === 'clearBtn') closeEditor();
+  const expireButton = event.target.closest('[data-action="expire-match"]');
+  if (expireButton) {
+    event.preventDefault();
+    if (!confirm('确定将这条推荐标记为已失效？')) return;
+    api(`demandMatches/${expireButton.dataset.id}/expire`, { method: 'POST' })
+      .then(() => openDemandMatchPanel(currentRecord))
+      .catch((error) => alert(error.message || '标记失效失败'));
+  }
 });
 
 form.addEventListener('change', (event) => {
@@ -713,11 +1012,62 @@ form.addEventListener('change', (event) => {
 
 form.addEventListener('submit', async (event) => {
   event.preventDefault();
+  if (form.dataset.mode === 'company-profile') {
+    const formData = new FormData(form);
+    const payload = {};
+    resources.companyProfile.fields.forEach(([key]) => {
+      payload[key] = formData.get(key);
+    });
+    const submitButton = form.querySelector('button[type="submit"]');
+    if (submitButton) {
+      submitButton.disabled = true;
+      submitButton.textContent = '保存中...';
+    }
+    try {
+      const profile = await api('company-profile', {
+        method: 'PUT',
+        body: JSON.stringify(payload)
+      });
+      alert('公司基础信息已保存。');
+      renderCompanyProfile(profile);
+      renderCompanyProfileForm(profile);
+    } catch (error) {
+      alert(error.message || '保存公司基础信息失败');
+      if (submitButton) {
+        submitButton.disabled = false;
+        submitButton.textContent = '保存修改';
+      }
+    }
+    return;
+  }
+  if (form.dataset.mode === 'demand-match') {
+    const formData = new FormData(form);
+    try {
+      await api(`demands/${form.dataset.demandId}/matches`, {
+        method: 'POST',
+        body: JSON.stringify({
+          ayiId: Number(formData.get('ayiId')),
+          recommendNote: formData.get('recommendNote')
+        })
+      });
+      alert('已保存推荐。');
+      const demandId = Number(form.dataset.demandId);
+      await loadResource('demands');
+      const record = cache.find((item) => item.id === demandId);
+      if (record) await openDemandMatchPanel(record);
+    } catch (error) {
+      alert(error.message || '保存推荐失败');
+    }
+    return;
+  }
   const formData = new FormData(form);
   const payload = {};
   resources[currentResource].fields.forEach(([key]) => {
     payload[key] = normalizeValue(key, pendingImages[key] || formData.get(key));
   });
+  if (currentResource === 'accounts' && payload.role) {
+    payload.role = normalizeRoleForSave(payload.role);
+  }
 
   if (currentRecord) {
     await api(`${currentResource}/${currentRecord.id}`, {
@@ -746,14 +1096,24 @@ async function boot() {
     currentUser = me.user;
     allowedResources = me.allowedResources || [];
     if (!me.canUseBackstage) {
-      clearAuth('该账号不能进入后台，请使用运营或老板账号。');
+      clearAuth('该账号不能进入后台，请使用运营端或管理端账号。');
       return;
     }
     applyAuthShell();
-    await loadResource(getAllowedResources()[0]);
+    if (!location.hash || location.hash === '#') {
+      setRoute('home');
+    } else {
+      await renderRoute();
+    }
   } catch (error) {
     clearAuth('登录已过期，请重新登录。');
   }
 }
+
+window.addEventListener('hashchange', () => {
+  renderRoute().catch((error) => {
+    alert(error.message || '页面加载失败');
+  });
+});
 
 boot();

@@ -44,13 +44,13 @@
         "维护门店和内容"
       ],
       "status": "启用",
-      "note": "日常工作人员使用，不看老板级汇总。"
+      "note": "日常工作人员使用，不看管理级汇总。"
     },
     {
       "id": 4,
-      "name": "老板账号",
+      "name": "管理端账号",
       "phone": "",
-      "role": "老板端",
+      "role": "管理端",
       "entry": "后台管理",
       "permissions": [
         "查看全部数据",
@@ -59,7 +59,7 @@
         "管理运营账号"
       ],
       "status": "启用",
-      "note": "老板查看全局数据和关键业务。"
+      "note": "管理端查看全局数据和关键业务。"
     }
   ],
   "ayis": [
@@ -83,7 +83,8 @@
       "idCardImage": "",
       "healthCertImage": "",
       "skillCertImage": "",
-      "intro": ""
+      "intro": "",
+      "visible": true
     },
     {
       "id": 1,
@@ -110,7 +111,8 @@
       "intro": "性格耐心，擅长 0-3 岁宝宝照护。",
       "storeId": 1,
       "featured": true,
-      "featuredTitle": "金牌育儿嫂"
+      "featuredTitle": "金牌育儿嫂",
+      "visible": true
     },
     {
       "id": 3,
@@ -137,7 +139,8 @@
       "intro": "演示数据：长期服务稳定，擅长家常餐、日常家务和老人陪伴。",
       "storeId": 1,
       "featured": true,
-      "featuredTitle": "明星住家保姆"
+      "featuredTitle": "明星住家保姆",
+      "visible": true
     },
     {
       "id": 4,
@@ -164,7 +167,8 @@
       "intro": "演示数据：做饭好，收纳利落，适合长期住家服务。",
       "storeId": 1,
       "featured": true,
-      "featuredTitle": "金牌住家保姆"
+      "featuredTitle": "金牌住家保姆",
+      "visible": true
     },
     {
       "id": 5,
@@ -191,7 +195,8 @@
       "intro": "演示数据：月子餐搭配细致，新生儿护理经验丰富。",
       "storeId": 1,
       "featured": true,
-      "featuredTitle": "明星月嫂"
+      "featuredTitle": "明星月嫂",
+      "visible": true
     }
   ],
   "demands": [
@@ -367,6 +372,12 @@
       "title": "服务范围",
       "summary": "家政、母婴、养老、保洁、小时工",
       "image": "",
+      "moduleType": "highlight",
+      "iconText": "区",
+      "iconImage": "",
+      "theme": "green",
+      "targetType": "service",
+      "targetValue": "all",
       "sort": 1,
       "visible": true
     },
@@ -375,6 +386,12 @@
       "title": "重点区域",
       "summary": "东城、朝阳、海淀、丰台、通州",
       "image": "",
+      "moduleType": "highlight",
+      "iconText": "点",
+      "iconImage": "",
+      "theme": "blue",
+      "targetType": "store",
+      "targetValue": "all",
       "sort": 2,
       "visible": true
     },
@@ -383,7 +400,153 @@
       "title": "推荐机制",
       "summary": "顾问根据地址、预算、家庭情况匹配阿姨",
       "image": "",
+      "moduleType": "highlight",
+      "iconText": "配",
+      "iconImage": "",
+      "theme": "mint",
+      "targetType": "demand",
+      "targetValue": "new",
       "sort": 3,
+      "visible": true
+    },
+    {
+      "id": 4,
+      "title": "育儿嫂",
+      "summary": "0-3 岁婴幼儿照护",
+      "image": "",
+      "moduleType": "service",
+      "iconText": "育",
+      "iconImage": "",
+      "theme": "mint",
+      "targetType": "找阿姨",
+      "targetValue": "育儿嫂",
+      "sort": 20,
+      "visible": true
+    },
+    {
+      "id": 5,
+      "title": "月嫂",
+      "summary": "产妇和新生儿照护",
+      "image": "",
+      "moduleType": "service",
+      "iconText": "月",
+      "iconImage": "",
+      "theme": "rose",
+      "targetType": "找阿姨",
+      "targetValue": "月嫂",
+      "sort": 30,
+      "visible": true
+    },
+    {
+      "id": 6,
+      "title": "住家保姆",
+      "summary": "三餐家务和日常照护",
+      "image": "",
+      "moduleType": "service",
+      "iconText": "家",
+      "iconImage": "",
+      "theme": "green",
+      "targetType": "找阿姨",
+      "targetValue": "住家保姆",
+      "sort": 40,
+      "visible": true
+    },
+    {
+      "id": 7,
+      "title": "小时工",
+      "summary": "保洁收纳和临时家务",
+      "image": "",
+      "moduleType": "service",
+      "iconText": "时",
+      "iconImage": "",
+      "theme": "blue",
+      "targetType": "找阿姨",
+      "targetValue": "小时工",
+      "sort": 50,
+      "visible": true
+    },
+    {
+      "id": 8,
+      "title": "老人陪护",
+      "summary": "陪诊照护和生活协助",
+      "image": "",
+      "moduleType": "service",
+      "iconText": "护",
+      "iconImage": "",
+      "theme": "warm",
+      "targetType": "找阿姨",
+      "targetValue": "老人陪护",
+      "sort": 60,
+      "visible": true
+    },
+    {
+      "id": 9,
+      "title": "家庭保洁",
+      "summary": "家庭清洁和整理收纳",
+      "image": "",
+      "moduleType": "service",
+      "iconText": "洁",
+      "iconImage": "",
+      "theme": "green",
+      "targetType": "找阿姨",
+      "targetValue": "家庭保洁",
+      "sort": 70,
+      "visible": true
+    },
+    {
+      "id": 10,
+      "title": "找阿姨",
+      "summary": "查看认证档案",
+      "moduleType": "shortcut",
+      "iconText": "找",
+      "iconImage": "",
+      "theme": "green",
+      "targetType": "find_ayi",
+      "targetValue": "",
+      "image": "",
+      "sort": 5,
+      "visible": true
+    },
+    {
+      "id": 11,
+      "title": "发布需求",
+      "summary": "顾问快速匹配",
+      "moduleType": "shortcut",
+      "iconText": "需",
+      "iconImage": "",
+      "theme": "mint",
+      "targetType": "demand",
+      "targetValue": "",
+      "image": "",
+      "sort": 10,
+      "visible": true
+    },
+    {
+      "id": 12,
+      "title": "客服咨询",
+      "summary": "电话沟通需求",
+      "moduleType": "shortcut",
+      "iconText": "客",
+      "iconImage": "",
+      "theme": "blue",
+      "targetType": "customer_service",
+      "targetValue": "",
+      "image": "",
+      "sort": 15,
+      "visible": true
+    },
+    {
+      "id": 13,
+      "title": "公司介绍",
+      "summary": "了解流程与保障",
+      "moduleType": "shortcut",
+      "iconText": "介",
+      "iconImage": "",
+      "theme": "warm",
+      "targetType": "about",
+      "targetValue": "",
+      "image": "",
+      "sort": 20,
       "visible": true
     }
   ],
@@ -405,5 +568,13 @@
       "customerLeads": 2,
       "ayiLeads": 2
     }
+  },
+  "companyProfile": {
+    "companyName": "北京阳光北亚家政",
+    "shortName": "阳光北亚",
+    "introduction": "北京阳光北亚家政提供家政、母婴、养老护理和保洁等家庭服务咨询与匹配。",
+    "customerServicePhone": "18611607087",
+    "address": "北京市东城区安定门外东河沿乙六号楼三层",
+    "businessHours": "09:00-18:00"
   }
 }

@@ -11,7 +11,7 @@
       <div class="login-card">
         <div class="login-brand">北京阳光北亚家政</div>
         <h1>后台登录</h1>
-        <p>运营和老板账号登录后台管理。客户和阿姨账号暂时预留给小程序登录接口。</p>
+        <p>运营端和管理端账号登录后台管理。</p>
         <form id="loginForm" class="login-form">
           <div class="field">
             <label>账号或手机号</label>
@@ -40,24 +40,27 @@
 
     <main class="layout app-shell">
       <nav class="tabs">
-        <button class="tab active" data-resource="dashboard">经营看板</button>
-        <button class="tab" data-resource="accounts">账号权限</button>
-        <button class="tab" data-resource="ayis">阿姨管理</button>
-        <button class="tab" data-resource="demands">客户需求</button>
-        <button class="tab" data-resource="appointments">预约面试</button>
-        <button class="tab" data-resource="applications">接单申请</button>
-        <button class="tab" data-resource="orders">订单跟进</button>
-        <button class="tab" data-resource="orderDispatches">人工派单</button>
-        <button class="tab" data-resource="stores">门店信息</button>
-        <button class="tab" data-resource="serviceModules">公司服务</button>
-        <button class="tab" data-resource="banners">首页轮播</button>
+        <button class="tab active" data-route="home">后台首页</button>
+        <button class="tab" data-route="dashboard" data-resource="dashboard">经营看板</button>
+        <button class="tab" data-route="accounts" data-resource="accounts">账号权限</button>
+        <button class="tab" data-route="ayis" data-resource="ayis">阿姨管理</button>
+        <button class="tab" data-route="demands" data-resource="demands">客户需求</button>
+        <button class="tab" data-route="appointments" data-resource="appointments">预约面试</button>
+        <button class="tab" data-route="applications" data-resource="applications">接单申请</button>
+        <button class="tab" data-route="orders" data-resource="orders">订单跟进</button>
+        <button class="tab" data-route="dispatches" data-resource="orderDispatches">人工派单</button>
+        <button class="tab" data-route="company" data-resource="companyProfile">公司基础信息</button>
+        <button class="tab" data-route="stores" data-resource="stores">门店信息</button>
+        <button class="tab" data-route="services" data-resource="serviceModules">公司服务</button>
+        <button class="tab" data-route="banners" data-resource="banners">首页轮播</button>
       </nav>
 
       <section class="panel">
         <div class="panel-head">
+          <button id="backHomeBtn" class="secondary back-home" type="button">返回后台首页</button>
           <div>
-            <h2 id="sectionTitle">阿姨管理</h2>
-            <p id="sectionDesc">维护阿姨资料、服务类型、薪资和审核状态。</p>
+            <h2 id="sectionTitle">后台功能首页</h2>
+            <p id="sectionDesc">选择一个功能模块进入独立页面视图。</p>
           </div>
           <button id="addBtn">新增</button>
         </div>
