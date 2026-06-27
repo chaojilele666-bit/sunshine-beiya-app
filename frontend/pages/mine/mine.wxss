@@ -28,6 +28,12 @@
   background: #315b7c;
 }
 
+.user-avatar-image {
+  display: block;
+  line-height: normal;
+  background: #edf8f4;
+}
+
 .user-main {
   flex: 1;
   min-width: 0;
@@ -79,6 +85,15 @@
   font-weight: 800;
 }
 
+.review-button {
+  height: 56rpx;
+  line-height: 56rpx;
+  margin-top: 14rpx;
+  padding: 0 22rpx;
+  border-radius: 28rpx;
+  font-size: 24rpx;
+}
+
 .tools-section {
   margin-top: 24rpx;
 }
@@ -122,6 +137,15 @@
   font-weight: 800;
 }
 
+.tool-image {
+  flex: 0 0 56rpx;
+  width: 56rpx;
+  height: 56rpx;
+  margin-right: 14rpx;
+  border-radius: 16rpx;
+  background: #edf8f4;
+}
+
 .tool-text {
   flex: 1;
   min-width: 0;
@@ -161,33 +185,13 @@
   font-weight: 800;
 }
 
-.assist-list {
-  margin-top: 4rpx;
+.banner-button {
+  height: 64rpx;
+  line-height: 64rpx;
+  margin-top: 18rpx;
   padding: 0 24rpx;
-  box-sizing: border-box;
-}
-
-.assist-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 86rpx;
-  border-bottom: 1rpx solid #edf0f2;
-}
-
-.assist-row:last-child {
-  border-bottom: 0;
-}
-
-.assist-title {
-  color: #1f2933;
-  font-size: 28rpx;
-  font-weight: 800;
-}
-
-.assist-arrow {
-  color: #b0b7bf;
-  font-size: 40rpx;
+  border-radius: 32rpx;
+  font-size: 26rpx;
 }
 
 .empty {

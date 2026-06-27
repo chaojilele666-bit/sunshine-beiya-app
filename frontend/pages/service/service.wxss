@@ -46,6 +46,14 @@
   height: 70rpx;
 }
 
+.service-top-note {
+  margin-bottom: 18rpx;
+  padding: 20rpx 22rpx;
+  color: #5d6873;
+  font-size: 26rpx;
+  line-height: 1.5;
+}
+
 .feature-grid {
   display: flex;
   flex-wrap: wrap;
@@ -69,6 +77,13 @@
 
 .feature-card.large {
   background: #e8f8f1;
+}
+
+.feature-icon {
+  display: block;
+  width: 48rpx;
+  height: 48rpx;
+  margin-bottom: 12rpx;
 }
 
 .feature-title {
@@ -169,19 +184,41 @@
 
 .work-tile {
   flex: 1;
-  height: 60rpx;
-  line-height: 60rpx;
+  min-height: 116rpx;
   margin-right: 16rpx;
-  border-radius: 30rpx;
+  padding: 16rpx 12rpx;
+  border-radius: 20rpx;
   background: #ffffff;
   color: #77818c;
   text-align: center;
   font-size: 25rpx;
   font-weight: 700;
+  box-sizing: border-box;
 }
 
 .work-tile:last-child {
   margin-right: 0;
+}
+
+.work-tile-icon {
+  display: block;
+  width: 42rpx;
+  height: 42rpx;
+  margin: 0 auto 8rpx;
+}
+
+.work-tile-title {
+  color: #1f2933;
+  font-size: 27rpx;
+  line-height: 1.25;
+  font-weight: 800;
+}
+
+.work-tile-desc {
+  margin-top: 6rpx;
+  color: #8b949e;
+  font-size: 22rpx;
+  line-height: 1.3;
 }
 
 .ayi-card,

@@ -174,18 +174,152 @@ async function listDispatches(filter = null) {
   }));
 }
 
-async function listAuditLogs(limit = 100) {
+const SENSITIVE_KEYS = new Set([
+  'password',
+  'password_hash',
+  'token',
+  'access_token',
+  'refresh_token',
+  'session',
+  'session_key',
+  'openid',
+  'secret',
+  'appsecret',
+  'private_key',
+  'authorization',
+  'cookie',
+  'customer_access_token_hash'
+]);
+
+function isSensitiveKey(key) {
+  const normalized = String(key || '').toLowerCase();
+  return SENSITIVE_KEYS.has(normalized) || normalized.includes('password') || normalized.includes('token');
+}
+
+function sanitizeAuditValue(value) {
+  if (Array.isArray(value)) return value.map(sanitizeAuditValue);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [
+    key,
+    isSensitiveKey(key) ? '[已隐藏]' : sanitizeAuditValue(item)
+  ]));
+}
+
+function buildAuditFilters(filters = {}) {
+  const where = [];
+  const values = [];
+
+  function add(value, clause) {
+    if (value === undefined || value === null || value === '') return;
+    values.push(value);
+    where.push(clause.replace('?', `$${values.length}`));
+  }
+
+  if (filters.actor) add(`%${filters.actor}%`, 'actor ILIKE ?');
+  if (filters.role) add(filters.role, 'actor_role = ?');
+  if (filters.action) add(filters.action, 'action = ?');
+  if (filters.entityType) {
+    values.push(filters.entityType, filters.entityType);
+    where.push(`(entity_type = $${values.length - 1} OR resource_type = $${values.length})`);
+  }
+  add(filters.startTime, 'created_at >= ?');
+  add(filters.endTime, 'created_at <= ?');
+
+  if (filters.keyword) {
+    values.push(`%${filters.keyword}%`);
+    where.push(`(
+      actor ILIKE $${values.length}
+      OR actor_role ILIKE $${values.length}
+      OR action ILIKE $${values.length}
+      OR entity_type ILIKE $${values.length}
+      OR resource_type ILIKE $${values.length}
+      OR resource_id_text ILIKE $${values.length}
+      OR before_summary ILIKE $${values.length}
+      OR after_summary ILIKE $${values.length}
+    )`);
+  }
+
+  return {
+    clause: where.length ? `WHERE ${where.join(' AND ')}` : '',
+    values
+  };
+}
+
+function auditRowToClient(row) {
+  return {
+    id: row.id,
+    actor: row.actor,
+    actorRole: row.actorRole,
+    action: row.action,
+    entityType: row.entityType,
+    resourceType: row.resourceType,
+    resourceId: row.resourceId,
+    beforeSummary: row.beforeSummary,
+    afterSummary: row.afterSummary,
+    beforeData: sanitizeAuditValue(row.beforeData),
+    afterData: sanitizeAuditValue(row.afterData),
+    createdAt: row.createdAt
+  };
+}
+
+async function listAuditLogs(filters = {}) {
+  const page = Math.max(1, Number(filters.page) || 1);
+  const requestedPageSize = Number(filters.pageSize) || Number(filters.limit) || 20;
+  const pageSize = Math.min(100, Math.max(1, requestedPageSize));
+  const offset = (page - 1) * pageSize;
+  const built = buildAuditFilters(filters);
+  const countResult = await db.query(
+    `SELECT count(*) AS total FROM audit_logs ${built.clause}`,
+    built.values
+  );
   const result = await db.query(
     `SELECT id, actor, actor_role AS "actorRole", action, entity_type AS "entityType",
             resource_type AS "resourceType", resource_id_text AS "resourceId",
+            before_data AS "beforeData", after_data AS "afterData",
             before_summary AS "beforeSummary", after_summary AS "afterSummary",
             created_at AS "createdAt"
      FROM audit_logs
+     ${built.clause}
      ORDER BY created_at DESC
-     LIMIT $1`,
-    [Number(limit) || 100]
+     LIMIT $${built.values.length + 1}
+     OFFSET $${built.values.length + 2}`,
+    built.values.concat([pageSize, offset])
   );
-  return result.rows;
+  const total = Number(countResult.rows[0].total) || 0;
+  return {
+    items: result.rows.map(auditRowToClient),
+    total,
+    page,
+    pageSize,
+    totalPages: Math.max(1, Math.ceil(total / pageSize))
+  };
+}
+
+async function listAuditLogsForExport(filters = {}) {
+  const limit = Math.min(10000, Math.max(1, Number(filters.limit) || 10000));
+  const built = buildAuditFilters(filters);
+  const result = await db.query(
+    `SELECT id, actor, actor_role AS "actorRole", action, entity_type AS "entityType",
+            resource_type AS "resourceType", resource_id_text AS "resourceId",
+            before_data AS "beforeData", after_data AS "afterData",
+            before_summary AS "beforeSummary", after_summary AS "afterSummary",
+            created_at AS "createdAt"
+     FROM audit_logs
+     ${built.clause}
+     ORDER BY created_at DESC
+     LIMIT $${built.values.length + 1}`,
+    built.values.concat([limit])
+  );
+  return result.rows.map(auditRowToClient);
+}
+
+async function writeAuditExport(actor, filters, count) {
+  await db.transaction(async (client) => {
+    await resourceRepository.writeAudit(client, 'export', 'auditLogs', 'export', null, {
+      filters,
+      count
+    }, actor);
+  });
 }
 
 module.exports = {
@@ -193,5 +327,7 @@ module.exports = {
   getDashboard,
   getMiniprogramData,
   listAuditLogs,
+  listAuditLogsForExport,
+  writeAuditExport,
   listDispatches
 };

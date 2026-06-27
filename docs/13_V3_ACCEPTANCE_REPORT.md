@@ -1,6 +1,6 @@
 # V3 Acceptance Report
 
-Generated at: 2026-06-26T10:20:57.973Z
+Generated at: 2026-06-27T04:10:36.609Z
 Branch: V3
 
 ## Summary
@@ -10,135 +10,65 @@ Branch: V3
 - FAIL: 0
 - Not run: 0
 - Remaining P0: 0
-- Remaining P1: 1
-- Conclusion: Ready for V3 pull request and WeChat manual acceptance has passed
+- Remaining P1: 2
+- Conclusion: Ready for WeChat manual acceptance
 
-## Automated Acceptance
+## Empty Database Migration
 
-The final automated acceptance was executed with `Backstage/scripts/runV3Acceptance.js` after recording manual acceptance.
-
-Validated areas:
-
-- Full JS syntax check.
-- JSON parsing.
-- WXML tag balance.
-- SQL UTF-8 and BOM scan.
-- Common mojibake marker scan.
-- Sensitive literal scan.
-- `git diff --check`.
-- V001-V008 first migration on an isolated temporary database.
-- V001-V008 repeated migration on the same temporary database.
-- Current database repeated migration for V004-V008.
-- Permission matrix for unauthenticated, boss, operator, customer, and ayi identities.
-- Company profile read, update, and restore.
-- Service module disable and restore.
-- Shortcut update, disable, and restore.
-- Ayi visible/downlisted behavior.
-- Customer demand token flow.
-- Demand recommendation, duplicate recommendation handling, confirm, reject, cross-demand rejection, and repeat decision handling.
-- audit_logs write checks.
-- Store and image API regression.
-- Test data cleanup.
-- Temporary database cleanup.
-
-## Empty Database Migration Result
-
-- V001-V008 first execution: PASS.
-- V001-V008 repeated execution: PASS.
-- Duplicate stores after migration: 0.
-- `ayis.store_id`: valid store ID or NULL.
-- Temporary database cleanup: PASS.
+- V001-V008 are executed once on an isolated temporary database.
+- V001-V008 are executed a second time on the same temporary database.
+- Store duplicates and ayis.store_id foreign key integrity are checked.
+- The temporary database is dropped in finally.
 
 ## Permission Matrix
 
-| Identity | Expected result | Status |
-| --- | --- | --- |
-| Unauthenticated | Backstage protected API returns 401 | PASS |
-| Management `boss` | Dashboard, company profile, daily management resources return 200 | PASS |
-| Operator `operator` | Company profile, dashboard, account permissions return 403; authorized daily resources return 200 | PASS |
-| Customer `customer` | Generic Backstage CRUD APIs return 403 | PASS |
-| Ayi `ayi` | Generic Backstage CRUD APIs return 403 | PASS |
+| Role | Result |
+| --- | --- |
+| unauthenticated | Backstage API returns 401 |
+| boss / management | Dashboard, company profile, and daily resources are accessible |
+| operator | Company profile, dashboard, and account permissions return 403; daily resources are accessible |
+| customer | Generic Backstage CRUD returns 403 |
+| ayi | Generic Backstage CRUD returns 403 |
 
-## Demand Matching Result
+## Demand Matching
 
-- Customer demand creation: PASS.
-- Demand access token hash validation: PASS.
-- Wrong token rejected: PASS.
-- Backstage recommendation: PASS.
-- Duplicate recommendation returns 409: PASS.
-- Downlisted ayi cannot be newly recommended: PASS.
-- Customer match list: PASS.
-- Customer confirm: PASS.
-- Customer reject: PASS.
-- Cross-demand operation rejected: PASS.
-- Repeat decision returns 409: PASS.
-- audit_logs written: PASS.
+- Customer demand creation, wrong token rejection, and correct token detail read are checked.
+- Backstage recommendation, duplicate 409, and downlisted ayi rejection are checked.
+- Match listing, confirm, reject, cross-demand rejection, and repeated decision 409 are checked.
+- State changes write audit_logs.
 
-## Company Profile Result
+## Company Profile
 
-- Management account can read, update, and restore company profile: PASS.
-- Operator cannot access or update company profile: PASS.
-- `/api/miniprogram` returns `companyProfile`: PASS.
+- Company profile can be read, updated by boss, and restored.
+- Operator cannot access or modify it.
+- /api/miniprogram returns companyProfile.
 
-## Service Center Result
+## Service Center
 
-- `serviceModules` contains `service` and `shortcut` records: PASS.
-- Disabling/restoring a service item affects `/api/miniprogram`: PASS.
-- Updating/disabling/restoring a shortcut affects `/api/miniprogram`: PASS.
+- serviceModules include service and shortcut records.
+- Disabling/restoring a service item affects /api/miniprogram.
+- Updating/disabling/restoring a shortcut affects /api/miniprogram.
 
-## Ayi Visibility Result
+## Ayi Visibility
 
-- `visible=true` certified ayi appears in public miniprogram data: PASS.
-- `visible=false` ayi does not appear in public miniprogram data: PASS.
-- Downlisted ayi cannot be newly recommended: PASS.
+- visible=true certified ayi appears in public miniprogram data.
+- visible=false ayi does not appear in public miniprogram data.
+- Downlisted ayi cannot be newly recommended.
 
-## WeChat Manual Acceptance
+## Cleanup
 
-Manual acceptance has been completed and passed for the following items.
+- Test rows use the V3_ACCEPTANCE prefix.
+- demands, demand_matches, ayis, service_modules, audit_logs, test accounts, and test sessions are cleaned in finally.
+- The temporary database is dropped in finally.
 
-### Customer Side
+## WeChat DevTools Manual Checklist
 
-- Homepage carousel displays correctly.
-- Shortcut title, sorting, icon, and navigation are correct.
-- Customer service phone is read from company profile configuration.
-- Service center display and navigation are correct.
-- Service filters synchronize with Backstage service items.
-- Ayi list and ayi detail pages display correctly.
-- Demand submission works correctly.
-- Backstage ayi recommendation works correctly.
-- Customer confirm and reject actions work correctly.
-- My demands can be reopened.
-- Store image, phone, navigation, and detail pages work correctly.
-- About/company information matches Backstage content.
-
-### Ayi Side
-
-- Ayi homepage displays correctly.
-- Customer shortcuts are not shown on the ayi side.
-- Ayi profile form and save flow work correctly.
-- Service type options are read from Backstage service items.
-- Work opportunities display correctly.
-- Job application flow works correctly.
-- My applications page works correctly.
-- Mine page and customer service entry work correctly.
-
-### Backstage Synchronization
-
-- Company profile updates synchronize to the miniprogram.
-- Service enable/disable updates synchronize to the miniprogram.
-- Shortcut edits, sorting, enable/disable updates synchronize to the miniprogram.
-- Ayi visible/downlisted changes take effect.
-- Homepage carousel updates synchronize to the miniprogram.
-
-## Cleanup Result
-
-- Temporary acceptance accounts: cleaned.
-- Temporary sessions: cleaned.
-- Temporary demands: cleaned.
-- Temporary demand matches: cleaned.
-- Temporary ayis: cleaned.
-- Temporary service modules: cleaned.
-- Temporary acceptance database: deleted.
+- Customer homepage showcase, shortcuts, service center display, and taps.
+- Demand detail page after demand submission, recommended ayi list, confirm/reject actions.
+- Service page, demand page, and ayi profile page service type options from Backstage.
+- Ayi homepage, profile, certificates, application, and my applications pages.
+- Store list, store detail, local HTTP image conversion, navigation, and phone actions.
+- About page and mine page customer service phone from companyProfile.
 
 ## Remaining P0
 
@@ -146,8 +76,45 @@ Manual acceptance has been completed and passed for the following items.
 
 ## Remaining P1
 
-- HTTPS, official WeChat login, production deployment, filing, and formal file service are not complete. These are outside the V3 local acceptance scope.
+- WeChat DevTools manual checks are still required for customer homepage, demand detail, service center, store images, and ayi pages.
+- HTTPS, official WeChat login, production deployment, filing, and formal file service are not complete.
 
-## Final Conclusion
+## Details
 
-V3 is ready to be packaged into commits, pushed to the `V3` branch, and opened as a pull request to `main` for review. It is not a production deployment approval.
+| # | Check | Result | Detail |
+| --- | --- | --- | --- |
+| 1 | 全仓 JS node --check | PASS | 34 JS files checked |
+| 2 | JSON 解析 | PASS | 20 JSON files parsed |
+| 3 | WXML 标签检查 | PASS | 13 WXML files checked |
+| 4 | SQL UTF-8/BOM/乱码检查 | PASS | 11 SQL files checked |
+| 5 | 常见乱码搜索 | PASS | 117 text files scanned |
+| 6 | 敏感信息扫描 | PASS | 130 tracked/untracked candidates scanned |
+| 7 | git diff --check | PASS | clean |
+| 8 | git status --short | PASS | 76 changed/untracked entries |
+| 9 | 临时数据库创建 | PASS | sunshine_beiya_v3_acceptance_1782533417875_bb5748 |
+| 10 | V001-V008 空库首次迁移 | PASS | V001__init_core_business_schema.sql, V002__backstage_resource_tables.sql, V003__auth_and_permissions.sql, V004__store_detail_fields.sql, V005__demand_matches.sql, V006__service_center_fields.sql, V007__company_profile.sql, V008__service_shortcuts.sql |
+| 11 | V001-V008 空库重复迁移 | PASS | V001__init_core_business_schema.sql, V002__backstage_resource_tables.sql, V003__auth_and_permissions.sql, V004__store_detail_fields.sql, V005__demand_matches.sql, V006__service_center_fields.sql, V007__company_profile.sql, V008__service_shortcuts.sql |
+| 12 | 空库迁移后门店不重复 | PASS | 0 duplicate store names |
+| 13 | ayis.store_id 外键完整 | PASS | all store_id values are valid or NULL |
+| 14 | 当前数据库 V004-V008 重复迁移 | PASS | V004-V008 repeated on current database |
+| 15 | API 健康检查 | PASS | database healthy |
+| 16 | Prepare temporary acceptance accounts | PASS | temporary accounts created with random credentials |
+| 17 | 测试账号登录 | PASS | boss/operator/customer/ayi login ok |
+| 18 | 未登录后台接口 401 | PASS | /api/ayis requires login |
+| 19 | boss 权限矩阵 | PASS | boss can access management resources |
+| 20 | operator 权限矩阵 | PASS | operator denied management-only resources and can access daily resources |
+| 21 | customer 后台通用 CRUD 被拒绝 | PASS | 6 resources rejected |
+| 22 | ayi 后台通用 CRUD 被拒绝 | PASS | 6 resources rejected |
+| 23 | 公司基础信息读取、修改、恢复 | PASS | company profile updated and restored |
+| 24 | 小程序公开数据接口 | PASS | source=postgres, serviceModules=15 |
+| 25 | 服务项目停用、恢复 | PASS | serviceModule=15 |
+| 26 | 快捷入口修改、停用、恢复 | PASS | shortcut=11 |
+| 27 | 创建并验证阿姨上架/下架 | PASS | ayi=113 |
+| 28 | 客户提交需求和 token 校验 | PASS | demand=197 |
+| 29 | 后台推荐、重复推荐409、下架阿姨不可推荐 | PASS | match=71 |
+| 30 | 客户推荐列表、确认、重复操作409 | PASS | confirmed match=71 |
+| 31 | 客户拒绝与跨需求操作被拒绝 | PASS | secondDemand=198 |
+| 32 | audit_logs 写入 | PASS | 14 audit rows found before cleanup |
+| 33 | 原有门店和图片接口回归 | PASS | stores=4, publicStores=4 |
+| 34 | 测试数据清理 | PASS | V3 acceptance rows removed by prefix. |
+| 35 | 临时数据库清理 | PASS | sunshine_beiya_v3_acceptance_1782533417875_bb5748 |

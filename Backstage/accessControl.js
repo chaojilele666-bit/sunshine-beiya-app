@@ -2,6 +2,7 @@ const BACKSTAGE_RESOURCES = new Set([
   'accounts',
   'ayis',
   'demands',
+  'todos',
   'appointments',
   'applications',
   'orders',
@@ -15,6 +16,7 @@ const BACKSTAGE_RESOURCES = new Set([
 const OPERATOR_RESOURCES = new Set([
   'ayis',
   'demands',
+  'todos',
   'appointments',
   'applications',
   'orders',
@@ -23,6 +25,62 @@ const OPERATOR_RESOURCES = new Set([
   'serviceModules',
   'banners'
 ]);
+
+const BOSS_ONLY_RESOURCES = new Set([
+  'dashboard',
+  'accounts',
+  'auditLogs',
+  'companyProfile'
+]);
+
+const ALL_BACKSTAGE_RESOURCES = [
+  'dashboard',
+  'accounts',
+  'auditLogs',
+  'todos',
+  'companyProfile',
+  ...OPERATOR_RESOURCES
+];
+
+const PERMISSION_ALIASES = {
+  dashboard: 'dashboard',
+  managementDashboard: 'dashboard',
+  accounts: 'accounts',
+  accountPermissions: 'accounts',
+  auditLogs: 'auditLogs',
+  audit_logs: 'auditLogs',
+  company: 'companyProfile',
+  companyProfile: 'companyProfile',
+  ayis: 'ayis',
+  ayi: 'ayis',
+  demands: 'demands',
+  appointments: 'appointments',
+  applications: 'applications',
+  orders: 'orders',
+  todos: 'todos',
+  todo: 'todos',
+  dispatches: 'orderDispatches',
+  orderDispatches: 'orderDispatches',
+  stores: 'stores',
+  services: 'serviceModules',
+  serviceModules: 'serviceModules',
+  banners: 'banners',
+  '管理看板': 'dashboard',
+  '账号权限': 'accounts',
+  '操作记录': 'auditLogs',
+  '公司基础信息': 'companyProfile',
+  '今日待办': 'todos',
+  '阿姨管理': 'ayis',
+  '客户需求': 'demands',
+  '预约面试': 'appointments',
+  '接单申请': 'applications',
+  '订单跟进': 'orders',
+  '人工派单': 'orderDispatches',
+  '门店信息': 'stores',
+  '服务中心': 'serviceModules',
+  '公司服务': 'serviceModules',
+  '首页轮播': 'banners'
+};
 
 function isBackstageRole(user) {
   return user && ['operator', 'boss'].includes(user.role);
@@ -33,9 +91,49 @@ function canUseBackstage(user) {
 }
 
 function allowedResourcesForRole(role) {
-  if (role === 'boss') return ['dashboard', 'accounts', 'companyProfile', ...OPERATOR_RESOURCES];
+  if (role === 'boss') return [...ALL_BACKSTAGE_RESOURCES];
   if (role === 'operator') return [...OPERATOR_RESOURCES];
   return [];
+}
+
+function normalizePermissionResource(value) {
+  const text = String(value || '').trim();
+  return PERMISSION_ALIASES[text] || null;
+}
+
+function configuredOperatorResources(user) {
+  const permissions = Array.isArray(user && user.permissions) ? user.permissions : [];
+  const normalized = permissions
+    .map(normalizePermissionResource)
+    .filter((resource) => resource && OPERATOR_RESOURCES.has(resource));
+  const unique = new Set(normalized);
+  if (unique.has('demands')) unique.add('todos');
+  return Array.from(unique);
+}
+
+function allowedResourcesForUser(user) {
+  if (!user) return [];
+  if (user.role === 'boss') return [...ALL_BACKSTAGE_RESOURCES];
+  if (user.role === 'operator') {
+    const configured = configuredOperatorResources(user);
+    if (configured.length) return configured;
+    return user.hasBackstageProfile ? [] : [...OPERATOR_RESOURCES];
+  }
+  return [];
+}
+
+function canAccessModule(user, resource) {
+  if (!user) return { ok: false, status: 401, message: 'Login required' };
+  if (user.role === 'boss') return { ok: true };
+  if (user.role === 'operator') {
+    if (BOSS_ONLY_RESOURCES.has(resource)) {
+      return { ok: false, status: 403, message: 'Management role required' };
+    }
+    return allowedResourcesForUser(user).includes(resource)
+      ? { ok: true }
+      : { ok: false, status: 403, message: 'Permission denied' };
+  }
+  return { ok: false, status: 403, message: 'Permission denied' };
 }
 
 function normalizePhone(value) {
@@ -66,31 +164,18 @@ function canAccessResource(user, resource, method) {
   if (!auth.ok) return auth;
 
   if (resource === 'dashboard') {
-    return user.role === 'boss'
-      ? { ok: true }
-      : { ok: false, status: 403, message: 'Management role required' };
+    return canAccessModule(user, resource);
   }
 
   if (resource === 'auditLogs') {
-    return user.role === 'boss'
-      ? { ok: true }
-      : { ok: false, status: 403, message: 'Management role required' };
+    return canAccessModule(user, resource);
   }
 
   if (!BACKSTAGE_RESOURCES.has(resource)) {
     return { ok: false, status: 404, message: 'Unknown resource' };
   }
 
-  if (user.role === 'boss') return { ok: true };
-
-  if (user.role === 'operator') {
-    if (!OPERATOR_RESOURCES.has(resource)) {
-      return { ok: false, status: 403, message: 'Permission denied' };
-    }
-    return { ok: true };
-  }
-
-  return { ok: false, status: 403, message: 'Permission denied' };
+  return canAccessModule(user, resource);
 }
 
 function canAccessRecord(user, resource, record) {
@@ -215,8 +300,10 @@ function listFilterForUser(user, resource) {
 }
 
 module.exports = {
+  allowedResourcesForUser,
   allowedResourcesForRole,
   canAccessRecord,
+  canAccessModule,
   canAccessResource,
   canUseBackstage,
   isBackstageRole,

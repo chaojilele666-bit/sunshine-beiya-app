@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const db = require('../db');
+const ayiAvailabilityRepository = require('./ayiAvailabilityRepository');
 const resourceRepository = require('./resourceRepository');
 
 const DEMAND_STATUSES = new Set(['待处理', '已联系', '匹配中', '已匹配', '已关闭']);
@@ -304,6 +305,14 @@ async function createBackstageMatch(demandId, payload, actor) {
     if (!ayiResult.rows[0]) {
       const error = new Error('Only certified ayis can be recommended');
       error.status = 400;
+      throw error;
+    }
+
+    const eligibility = await ayiAvailabilityRepository.checkRecommendable(payload.ayiId, demandBefore, client);
+    if (!eligibility.recommendable) {
+      const error = new Error(`Ayi cannot be recommended: ${eligibility.reasons.join('；')}`);
+      error.status = 400;
+      error.reasons = eligibility.reasons;
       throw error;
     }
 

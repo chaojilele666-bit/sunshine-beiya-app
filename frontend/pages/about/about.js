@@ -1,63 +1,148 @@
+const DEFAULT_COMPANY_PROFILE = {
+  companyName: '北京阳光北亚家政',
+  shortName: '阳光北亚',
+  companyLogo: '',
+  defaultCity: '北京',
+  introduction: '家庭服务匹配平台，覆盖一般家政、母婴服务、育婴服务、养老护理、保洁助餐等。',
+  customerServicePhone: '',
+  address: '暂未配置',
+  businessHours: '暂未配置'
+};
+
+const DEFAULT_INTRO_CONFIG = {
+  visible: true,
+  pageTitle: '公司介绍'
+};
+
+const DEFAULT_SERVICES = [
+  { id: 'default-housekeeping', title: '一般家政' },
+  { id: 'default-maternity', title: '月嫂服务' },
+  { id: 'default-baby', title: '育儿嫂/育婴服务' },
+  { id: 'default-elderly', title: '养老护理' },
+  { id: 'default-cleaning', title: '保洁助餐' }
+];
+
+const DEFAULT_PROCESS = [
+  { id: 'default-flow-1', step: '1', title: '提交服务需求', description: '' },
+  { id: 'default-flow-2', step: '2', title: '顾问沟通并匹配阿姨', description: '' },
+  { id: 'default-flow-3', step: '3', title: '预约面试确认细节', description: '' },
+  { id: 'default-flow-4', step: '4', title: '签约上户并持续跟进', description: '' }
+];
+
+const DEFAULT_GUARANTEES = [
+  { id: 'default-guarantee-1', title: '身份信息与健康资料核验', description: '' },
+  { id: 'default-guarantee-2', title: '证件和技能资料可审核', description: '' },
+  { id: 'default-guarantee-3', title: '顾问协助沟通服务边界', description: '' }
+];
+
+const DEFAULT_CUSTOMER_SERVICE = {
+  visible: true,
+  title: '客服咨询',
+  description: '如果不确定适合哪类阿姨，可以先电话沟通需求。',
+  buttonText: '联系客服'
+};
+
+function visible(value) {
+  return value !== false && value !== 'false' && value !== 0 && value !== '0';
+}
+
+function sortedVisibleModules(modules) {
+  return (modules || [])
+    .filter((item) => item && visible(item.visible))
+    .sort((a, b) => Number(a.sort || 0) - Number(b.sort || 0));
+}
+
+function buildIntroConfig(module) {
+  return Object.assign({}, DEFAULT_INTRO_CONFIG, {
+    visible: module ? visible(module.visible) : DEFAULT_INTRO_CONFIG.visible,
+    pageTitle: (module && module.title) || DEFAULT_INTRO_CONFIG.pageTitle
+  });
+}
+
+function buildCustomerServiceConfig(module) {
+  return Object.assign({}, DEFAULT_CUSTOMER_SERVICE, {
+    visible: module ? visible(module.visible) : DEFAULT_CUSTOMER_SERVICE.visible,
+    title: (module && module.title) || DEFAULT_CUSTOMER_SERVICE.title,
+    description: (module && module.description) || DEFAULT_CUSTOMER_SERVICE.description,
+    buttonText: (module && (module.iconText || module.targetValue)) || DEFAULT_CUSTOMER_SERVICE.buttonText
+  });
+}
+
+function buildStepModules(modules, fallback) {
+  return modules.length ? modules.map((item, index) => ({
+    id: item.id || `module-${index}`,
+    step: item.iconText || String(index + 1),
+    title: item.title,
+    description: item.description || ''
+  })) : fallback;
+}
+
 Page({
   data: {
-    companyProfile: {
-      companyName: '',
-      shortName: '',
-      introduction: '',
-      customerServicePhone: '',
-      address: '',
-      businessHours: ''
-    },
-    services: [
-      '一般家政',
-      '月嫂服务',
-      '育儿嫂/育婴服务',
-      '养老护理',
-      '病患照料',
-      '保洁助餐'
-    ],
-    stores: [
-      {
-        name: '东城安定门服务点',
-        area: '东城、西城、朝阳',
-        address: '北京市东城区安定门外东河沿乙六号楼三层'
-      },
-      {
-        name: '朝阳服务联络点',
-        area: '朝阳、通州、顺义',
-        address: '演示地址：朝阳区重点服务区域'
-      },
-      {
-        name: '海淀服务联络点',
-        area: '海淀、丰台、石景山',
-        address: '演示地址：海淀区重点服务区域'
-      }
-    ],
-    process: [
-      '提交服务需求',
-      '顾问沟通并匹配阿姨',
-      '预约面试确认细节',
-      '签约上户并持续跟进'
-    ],
-    guarantees: [
-      '身份信息与健康资料核验',
-      '身份证、健康证和技能证书可审核',
-      '服务技能和经验标签展示',
-      '顾问协助沟通服务边界',
-      '预约记录可在小程序内查看'
-    ]
+    companyProfile: DEFAULT_COMPANY_PROFILE,
+    displayLogo: '',
+    introConfig: DEFAULT_INTRO_CONFIG,
+    services: DEFAULT_SERVICES,
+    stores: [],
+    process: DEFAULT_PROCESS,
+    guarantees: DEFAULT_GUARANTEES,
+    customerServiceConfig: DEFAULT_CUSTOMER_SERVICE
   },
 
   onShow() {
     const app = getApp();
-    this.setData({
-      companyProfile: app.globalData.companyProfile || {}
-    });
+    this.refreshPage();
     app.loadBackendData({ force: true }).then(() => {
-      this.setData({
-        companyProfile: app.globalData.companyProfile || {}
-      });
+      this.refreshPage();
     });
+  },
+
+  refreshPage() {
+    const app = getApp();
+    const profile = Object.assign({}, DEFAULT_COMPANY_PROFILE, app.globalData.companyProfile || {});
+    const modules = app.globalData.serviceModules || [];
+    const visibleModules = sortedVisibleModules(modules);
+    const introModule = modules.find((item) => item && item.moduleType === 'highlight'
+      && item.targetType === 'about_company_intro');
+    const serviceModules = visibleModules.filter((item) => item.moduleType === 'service');
+    const flowModules = visibleModules.filter((item) => item.moduleType === 'highlight'
+      && item.targetType === 'about_service_flow');
+    const guaranteeModules = visibleModules.filter((item) => item.moduleType === 'highlight'
+      && item.targetType === 'about_service_guarantee');
+    const customerServiceModule = modules.find((item) => item && item.moduleType === 'highlight'
+      && item.targetType === 'about_customer_service');
+    const sourceStores = app.globalData.backendStores && app.globalData.backendStores.length ? app.globalData.backendStores : [];
+
+    this.setData({
+      companyProfile: profile,
+      displayLogo: '',
+      introConfig: buildIntroConfig(introModule),
+      services: serviceModules.length ? serviceModules.map((item) => ({
+        id: item.id,
+        title: item.title
+      })) : DEFAULT_SERVICES,
+      stores: sourceStores.filter((store) => store && store.visible !== false),
+      process: buildStepModules(flowModules, DEFAULT_PROCESS),
+      guarantees: guaranteeModules.length ? guaranteeModules.map((item) => ({
+        id: item.id,
+        title: item.title,
+        description: item.description || ''
+      })) : DEFAULT_GUARANTEES,
+      customerServiceConfig: buildCustomerServiceConfig(customerServiceModule)
+    });
+    this.refreshLogo(profile.companyLogo);
+  },
+
+  refreshLogo(imageUrl) {
+    const app = getApp();
+    if (!imageUrl) return;
+    app.resolveImageForDisplay(imageUrl, { storeId: 'about-company-logo' })
+      .then((displayLogo) => {
+        this.setData({ displayLogo: displayLogo || '' });
+      })
+      .catch(() => {
+        this.setData({ displayLogo: '' });
+      });
   },
 
   callService() {

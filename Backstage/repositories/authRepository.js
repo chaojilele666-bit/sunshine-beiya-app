@@ -24,6 +24,9 @@ function newToken() {
 
 function safeUser(row) {
   if (!row) return null;
+  const permissions = Array.isArray(row.backstage_permissions)
+    ? row.backstage_permissions
+    : [];
   return {
     id: row.id,
     username: row.username,
@@ -31,6 +34,10 @@ function safeUser(row) {
     role: row.role,
     relatedProfileType: row.related_profile_type,
     relatedProfileId: row.related_profile_id,
+    backstageProfileId: row.backstage_profile_id || null,
+    backstageRole: row.backstage_role || null,
+    hasBackstageProfile: Boolean(row.backstage_profile_id),
+    permissions,
     status: row.status,
     lastLoginAt: row.last_login_at,
     createdAt: row.created_at,
@@ -67,7 +74,15 @@ async function findByIdentifier(identifier, client = db) {
 }
 
 async function findById(id, client = db) {
-  const result = await client.query('SELECT * FROM user_accounts WHERE id = $1', [Number(id)]);
+  const result = await client.query(
+    `SELECT u.*, ba.id AS backstage_profile_id, ba.role AS backstage_role, ba.permissions AS backstage_permissions
+     FROM user_accounts u
+     LEFT JOIN backstage_accounts ba
+       ON u.related_profile_type = 'backstage_accounts'
+      AND u.related_profile_id = ba.id::text
+     WHERE u.id = $1`,
+    [Number(id)]
+  );
   return result.rows[0] || null;
 }
 
@@ -135,9 +150,13 @@ async function login({ identifier, password, ipAddress, userAgent }) {
 async function getUserByToken(token) {
   if (!token) return null;
   const result = await db.query(
-    `SELECT u.*, s.expires_at AS session_expires_at, s.id AS session_id
+    `SELECT u.*, s.expires_at AS session_expires_at, s.id AS session_id,
+            ba.id AS backstage_profile_id, ba.role AS backstage_role, ba.permissions AS backstage_permissions
      FROM auth_sessions s
      JOIN user_accounts u ON u.id = s.user_account_id
+     LEFT JOIN backstage_accounts ba
+       ON u.related_profile_type = 'backstage_accounts'
+      AND u.related_profile_id = ba.id::text
      WHERE s.token_hash = $1
        AND s.revoked_at IS NULL
        AND s.expires_at > now()

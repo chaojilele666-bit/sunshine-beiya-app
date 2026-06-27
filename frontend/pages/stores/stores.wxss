@@ -200,6 +200,13 @@
   margin-top: 12rpx;
 }
 
+.store-hint {
+  margin-top: 12rpx;
+  color: #77818c;
+  font-size: 24rpx;
+  line-height: 1.45;
+}
+
 .store-tag {
   display: inline-block;
   margin-right: 10rpx;

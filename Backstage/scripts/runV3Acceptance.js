@@ -13,6 +13,7 @@ const POSTGRES_USER = process.env.POSTGRES_USER || 'sunshine_app';
 const POSTGRES_DB = process.env.POSTGRES_DB || 'sunshine_beiya';
 const TEMP_DB = `sunshine_beiya_v3_acceptance_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
 const TEST_PREFIX = `V3_ACCEPTANCE_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
+const OPERATOR_PERMISSION_SQL = "ARRAY['阿姨管理','客户需求','预约面试','接单申请','订单跟进','人工派单','门店信息','服务中心','首页轮播']";
 
 const results = [];
 const cleanupTasks = [];
@@ -248,7 +249,7 @@ async function prepareAcceptanceAccounts() {
     ),
     operator_profile AS (
       INSERT INTO backstage_accounts (name, phone, role, entry, permissions, status, note)
-      VALUES ('V3 acceptance operator', '${backstageOperatorPhone}', '运营端', '后台管理', ARRAY['acceptance'], '启用', '${TEST_PREFIX}')
+      VALUES ('V3 acceptance operator', '${backstageOperatorPhone}', '运营端', '后台管理', ${OPERATOR_PERMISSION_SQL}, '启用', '${TEST_PREFIX}')
       RETURNING id, phone
     ),
     customer_profile AS (

@@ -1,5 +1,29 @@
 const db = require('../db');
 
+const BACKSTAGE_ACCOUNT_ROLES = new Set(['运营端', '管理端']);
+const BACKSTAGE_ACCOUNT_PERMISSIONS = new Set([
+  '阿姨管理',
+  '客户需求',
+  '今日待办',
+  '预约面试',
+  '接单申请',
+  '订单跟进',
+  '人工派单',
+  '门店信息',
+  '服务中心',
+  '首页轮播',
+  'ayis',
+  'demands',
+  'todos',
+  'appointments',
+  'applications',
+  'orders',
+  'orderDispatches',
+  'stores',
+  'serviceModules',
+  'banners'
+]);
+
 const resourceConfigs = {
   accounts: {
     table: 'backstage_accounts',
@@ -40,10 +64,20 @@ const resourceConfigs = {
       healthCertImage: 'health_cert_image',
       skillCertImage: 'skill_cert_image',
       intro: 'intro',
-      visible: 'visible'
+      visible: 'visible',
+      serviceStatus: 'service_status',
+      availableFrom: 'available_from',
+      availableTo: 'available_to',
+      statusConfirmedAt: 'status_confirmed_at',
+      scheduleNeedsConfirmation: 'schedule_needs_confirmation',
+      preferenceRegions: 'preference_regions',
+      preferenceServices: 'preference_services',
+      minSalary: 'min_salary',
+      maxSalary: 'max_salary',
+      recommendable: 'recommendable'
     },
     defaults: { source: '后台录入', skills: [], status: '待审核', visible: true, featured: false },
-    orderBy: 'updated_at DESC, id DESC'
+    orderBy: 'ayis.updated_at DESC, ayis.id DESC'
   },
   demands: {
     table: 'demands',
@@ -60,7 +94,12 @@ const resourceConfigs = {
       familyInfo: 'family_info',
       consultant: 'consultant',
       followNote: 'follow_note',
-      status: 'status'
+      status: 'status',
+      assignedOperatorId: 'assigned_operator_id',
+      assignedAt: 'assigned_at',
+      assignedBy: 'assigned_by',
+      lastFollowedUpAt: 'last_followed_up_at',
+      nextFollowUpAt: 'next_follow_up_at'
     },
     defaults: { source: '后台录入', status: '待处理' },
     orderBy: 'updated_at DESC, id DESC'
@@ -227,7 +266,7 @@ function toNumber(value) {
 function normalizeValue(key, value) {
   if (['permissions', 'skills', 'tags'].includes(key)) return toArray(value);
   if (['visible', 'canStay', 'featured'].includes(key)) return toBoolean(value);
-  if (['age', 'experience', 'sort', 'demandId', 'orderId', 'storeId', 'staffCount', 'consultantCount', 'ayiCount', 'latitude', 'longitude'].includes(key)) return toNumber(value);
+  if (['age', 'experience', 'sort', 'demandId', 'orderId', 'storeId', 'staffCount', 'consultantCount', 'ayiCount', 'latitude', 'longitude', 'assignedOperatorId'].includes(key)) return toNumber(value);
   return value === undefined ? null : value;
 }
 
@@ -248,6 +287,25 @@ function normalizePayload(config, payload, partial = false) {
         throw new Error(`${key} is required`);
       }
     });
+  }
+
+  if (config.table === 'backstage_accounts') {
+    if (normalized.role !== undefined && !BACKSTAGE_ACCOUNT_ROLES.has(normalized.role)) {
+      throw new Error('后台账号角色只能是运营端或管理端');
+    }
+    if (normalized.role === '运营端' && normalized.permissions !== undefined) {
+      const invalidPermissions = (normalized.permissions || []).filter((item) => !BACKSTAGE_ACCOUNT_PERMISSIONS.has(item));
+      if (invalidPermissions.length) {
+        throw new Error(`存在未授权的权限项：${invalidPermissions.join(', ')}`);
+      }
+    }
+  }
+
+  if (config.table === 'service_modules' && normalized.module_type !== undefined) {
+    const allowedTypes = new Set(['highlight', 'service', 'shortcut']);
+    if (!allowedTypes.has(normalized.module_type)) {
+      throw new Error('service module type must be highlight, service or shortcut');
+    }
   }
 
   return normalized;
@@ -272,6 +330,44 @@ function rowToResource(config, row) {
 }
 
 function buildSelect(config) {
+  if (config.table === 'ayis') {
+    return `
+      SELECT
+        ayis.*,
+        av.service_status,
+        av.available_from,
+        av.available_to,
+        av.status_confirmed_at,
+        CASE
+          WHEN av.status_confirmed_at IS NULL THEN true
+          WHEN av.status_confirmed_at < now() - interval '7 days' THEN true
+          ELSE false
+        END AS schedule_needs_confirmation,
+        COALESCE(regions.preference_regions, ARRAY[]::text[]) AS preference_regions,
+        COALESCE(services.preference_services, ARRAY[]::text[]) AS preference_services,
+        pref.min_salary,
+        pref.max_salary,
+        (
+          ayis.visible IS NOT FALSE
+          AND ayis.status IN ('已认证', 'approved')
+          AND COALESCE(av.service_status, 'available') = 'available'
+          AND (av.available_to IS NULL OR av.available_to >= CURRENT_DATE)
+        ) AS recommendable
+      FROM ayis
+      LEFT JOIN ayi_availability av ON av.ayi_id = ayis.id
+      LEFT JOIN ayi_service_preferences pref ON pref.ayi_id = ayis.id
+      LEFT JOIN (
+        SELECT ayi_id, array_agg(region ORDER BY region) AS preference_regions
+        FROM ayi_service_regions
+        GROUP BY ayi_id
+      ) regions ON regions.ayi_id = ayis.id
+      LEFT JOIN (
+        SELECT ast.ayi_id, array_agg(sm.title ORDER BY sm.sort, sm.id) AS preference_services
+        FROM ayi_service_types ast
+        JOIN service_modules sm ON sm.id = ast.service_module_id
+        GROUP BY ast.ayi_id
+      ) services ON services.ayi_id = ayis.id`;
+  }
   return `SELECT * FROM ${config.table}`;
 }
 
@@ -300,6 +396,20 @@ async function findById(resource, id, client = db) {
 function makeSummary(item) {
   if (!item) return null;
   return JSON.stringify(item).slice(0, 500);
+}
+
+function serviceModuleAuditResource(item) {
+  if (!item || !item.moduleType) return 'serviceModules';
+  return {
+    highlight: 'serviceModuleDescriptions',
+    service: 'serviceModuleHousekeeping',
+    shortcut: 'serviceModuleQuickEntries'
+  }[item.moduleType] || 'serviceModules';
+}
+
+function auditResourceName(resource, item) {
+  if (resource === 'serviceModules') return serviceModuleAuditResource(item);
+  return resource;
 }
 
 async function writeAudit(client, action, resource, id, before, after, actor = {}) {
@@ -335,7 +445,7 @@ async function create(resource, payload, actor) {
     );
     const created = rowToResource(config, result.rows[0]);
     await syncSequence(client, config.table);
-    await writeAudit(client, 'create', resource, created.id, null, created, actor);
+    await writeAudit(client, 'create', auditResourceName(resource, created), created.id, null, created, actor);
     return created;
   });
 }
@@ -358,7 +468,7 @@ async function update(resource, id, payload, actor) {
       values
     );
     const updated = rowToResource(config, result.rows[0]);
-    await writeAudit(client, 'update', resource, updated.id, before, updated, actor);
+    await writeAudit(client, 'update', auditResourceName(resource, updated), updated.id, before, updated, actor);
     return updated;
   });
 }
@@ -380,7 +490,7 @@ async function remove(resource, id, actor) {
     }
 
     await client.query(`DELETE FROM ${config.table} WHERE id = $1`, [Number(id)]);
-    await writeAudit(client, 'delete', resource, id, before, null, actor);
+    await writeAudit(client, 'delete', auditResourceName(resource, before), id, before, null, actor);
     return true;
   });
 }

@@ -4,6 +4,16 @@ const resources = {
     desc: '管理端查看点击量、客户信息量、阿姨信息量、发布量和业务状态汇总。',
     custom: 'dashboard'
   },
+  auditLogs: {
+    title: '\u64cd\u4f5c\u8bb0\u5f55',
+    desc: '\u7ba1\u7406\u7aef\u67e5\u770b\u8c01\u5728\u4ec0\u4e48\u65f6\u95f4\u505a\u4e86\u4ec0\u4e48\uff0c\u652f\u6301\u68c0\u7d22\u548c\u4e00\u952e\u5bfc\u51fa\u3002',
+    custom: 'auditLogs'
+  },
+  todos: {
+    title: '今日待办',
+    desc: '按负责人、下次跟进时间和状态查看客户跟进任务。',
+    custom: 'todos'
+  },
   accounts: {
     title: '账号权限',
     desc: '规划后台正式登录入口，并按运营端、管理端分组管理真实账号。',
@@ -24,11 +34,13 @@ const resources = {
   },
   companyProfile: {
     title: '公司基础信息',
-    desc: '统一维护小程序展示的公司名称、简介、客服电话、地址和营业时间。',
+    desc: '统一维护小程序展示的公司名称、Logo、默认城市、客服电话、地址和营业时间。',
     custom: 'companyProfile',
     fields: [
       ['companyName', '公司名称'],
       ['shortName', '公司简称'],
+      ['companyLogo', '公司 Logo', 'image'],
+      ['defaultCity', '默认城市或服务城市'],
       ['introduction', '公司简介', 'textarea'],
       ['customerServicePhone', '客服电话'],
       ['address', '公司地址', 'textarea'],
@@ -241,9 +253,12 @@ const resources = {
       ['visible', '是否显示', 'boolean']
     ],
     summary: (item) => [
-      `${displayModuleType(item.moduleType || 'highlight')} / ${item.iconText || '-'}`,
+      item.moduleType === 'shortcut'
+        ? `跳转：${displaySelectOption('targetType', item.targetType || 'none')}`
+        : item.moduleType === 'service'
+          ? `标签：${item.iconText || '-'}`
+          : `副标题：${item.iconText || '-'}`,
       item.summary || '-',
-      `点击：${item.targetType || '无跳转'}`,
       `排序：${item.sort || 0}`,
       `显示：${String(item.visible)}`
     ]
@@ -259,6 +274,33 @@ let currentUser = null;
 let authToken = null;
 let allowedResources = [];
 let expandedAccountRole = null;
+let currentModuleCategory = null;
+let currentModuleSearchKey = '';
+let currentModuleSearchQuery = '';
+let auditLogFilters = {
+  actor: '',
+  role: '',
+  entityType: '',
+  action: '',
+  startTime: '',
+  endTime: '',
+  keyword: '',
+  page: 1,
+  pageSize: 20
+};
+let auditLogTotal = 0;
+let auditLogTotalPages = 1;
+let todoFilters = {
+  category: 'today',
+  keyword: '',
+  operatorId: '',
+  page: 1,
+  pageSize: 20
+};
+let todoStats = {};
+let todoTotal = 0;
+let todoTotalPages = 1;
+let assignableOperators = [];
 
 const roleDisplayMap = {
   管理端: '管理端',
@@ -277,6 +319,8 @@ const rolePersistMap = {
 const routeToResourceMap = {
   dashboard: 'dashboard',
   accounts: 'accounts',
+  'audit-logs': 'auditLogs',
+  todos: 'todos',
   company: 'companyProfile',
   ayis: 'ayis',
   demands: 'demands',
@@ -285,14 +329,433 @@ const routeToResourceMap = {
   orders: 'orders',
   dispatches: 'orderDispatches',
   stores: 'stores',
-  services: 'serviceModules',
-  banners: 'banners'
+  'company-services': 'serviceModules'
 };
 
 const resourceToRouteMap = Object.entries(routeToResourceMap).reduce((result, [route, resource]) => {
   result[resource] = route;
   return result;
 }, {});
+resourceToRouteMap.serviceModules = 'company-services';
+
+const serviceModuleFieldPresets = {
+  highlight: {
+    moduleType: 'highlight',
+    fields: [
+      ['title', '标题'],
+      ['iconText', '副标题'],
+      ['summary', '说明文字', 'textarea'],
+      ['image', '说明图片', 'image'],
+      ['sort', '排序', 'number'],
+      ['visible', '是否显示', 'boolean']
+    ]
+  },
+  service: {
+    moduleType: 'service',
+    fields: [
+      ['title', '服务名称'],
+      ['summary', '服务介绍', 'textarea'],
+      ['iconImage', '服务图片', 'image'],
+      ['iconText', '服务标签'],
+      ['sort', '排序', 'number'],
+      ['visible', '是否显示', 'boolean']
+    ]
+  },
+  shortcut: {
+    moduleType: 'shortcut',
+    fields: [
+      ['title', '名称'],
+      ['summary', '说明', 'textarea'],
+      ['iconImage', '图标', 'image'],
+      ['targetType', '跳转目标', 'select', ['none', 'find_ayi', 'demand', 'customer_service', 'about', 'service', 'store']],
+      ['sort', '排序', 'number'],
+      ['visible', '是否显示', 'boolean']
+    ]
+  }
+};
+
+const companyServicePages = [
+  {
+    key: 'common-info',
+    route: 'company-services/common-info',
+    title: '公共信息配置',
+    desc: '唯一维护公司名称、Logo、默认城市、客服电话、联系地址和营业时间，其他页面不再重复保存这些字段。',
+    kind: 'resource',
+    resource: 'companyProfile',
+    source: 'company_profile'
+  },
+  {
+    key: 'service-types',
+    route: 'company-services/service-types',
+    title: '家政服务类型',
+    desc: '唯一维护家政服务类型本身。首页、服务页、需求表单、阿姨资料和公司介绍只读取这里的数据。',
+    kind: 'serviceModules',
+    moduleType: 'service',
+    source: 'service_modules.service',
+    fields: [
+      ['title', '服务名称'],
+      ['summary', '服务介绍', 'textarea'],
+      ['iconImage', '服务图片', 'image'],
+      ['iconText', '服务标签'],
+      ['sort', '排序', 'number'],
+      ['visible', '是否显示', 'boolean']
+    ]
+  },
+  {
+    key: 'home',
+    route: 'company-services/home',
+    title: '首页配置',
+    desc: '按首页实际页面继续下钻到客户首页配置，避免直接混合显示所有首页数据。',
+    cards: [
+      {
+        key: 'customer-home',
+        title: '客户首页',
+        desc: '只维护客户身份首页的主视觉、轮播、快捷入口、服务概览和服务流程；服务类型与推荐阿姨读取唯一数据源。',
+        route: 'company-services/home/customer',
+        kind: 'page',
+        source: 'customer-home',
+        cards: [
+          { key: 'hero', title: '顶部主视觉', desc: '维护主标题、副标题和两个按钮文案及跳转；城市、公司名称和 Logo 读取公共信息配置。', route: 'company-services/home/customer/hero', kind: 'homeHero', source: 'service_modules.highlight + company_profile' },
+          { key: 'banners', title: '首页轮播', desc: '复用现有轮播管理，维护图片、标题、跳转、排序和显示状态。', route: 'company-services/home/customer/banners', kind: 'resource', resource: 'banners', source: 'banners' },
+          { key: 'shortcuts', title: '首页快捷入口', desc: '维护名称、说明、图标、跳转目标、排序和是否显示。', route: 'company-services/home/customer/shortcuts', kind: 'serviceModules', moduleType: 'shortcut', filterTargetValue: 'customer_home_shortcuts', source: 'service_modules.shortcut' },
+          { key: 'overview', title: '公司服务概览', desc: '维护标题、数值或内容、排序和是否显示。', route: 'company-services/home/customer/overview', kind: 'serviceModules', moduleType: 'highlight', filterTargetType: 'customer_home_overview', source: 'service_modules.highlight', fields: [
+            ['title', '标题'],
+            ['iconText', '数值或内容'],
+            ['summary', '说明文字', 'textarea'],
+            ['sort', '排序', 'number'],
+            ['visible', '是否显示', 'boolean']
+          ] },
+          { key: 'flow', title: '服务流程', desc: '维护步骤编号、标题、说明、排序和是否显示。', route: 'company-services/home/customer/flow', kind: 'serviceModules', moduleType: 'highlight', filterTargetType: 'customer_home_flow', source: 'service_modules.highlight', fields: [
+            ['iconText', '步骤编号'],
+            ['title', '标题'],
+            ['summary', '说明', 'textarea'],
+            ['sort', '排序', 'number'],
+            ['visible', '是否显示', 'boolean']
+          ] }
+        ]
+      }
+      ,
+      {
+        key: 'ayi-home',
+        title: '阿姨首页',
+        desc: '只维护阿姨身份首页的顶部信息、快捷入口、完善资料提示、功能导航和推荐工作区域。',
+        route: 'company-services/home/ayi',
+        kind: 'page',
+        source: 'ayi-home',
+        cards: [
+          { key: 'top-info', title: '顶部信息', desc: '维护页面标题和说明文字；城市读取公共信息配置。', route: 'company-services/home/ayi/top-info', kind: 'serviceModules', moduleType: 'highlight', filterTargetType: 'ayi_home_top', source: 'service_modules.highlight + company_profile', fields: [
+            ['title', '页面标题'],
+            ['summary', '说明文字', 'textarea'],
+            ['visible', '是否显示', 'boolean']
+          ] },
+          { key: 'quick-entries', title: '快捷入口', desc: '维护个人资料、我的接单等入口的名称、说明、排序和显示状态。', route: 'company-services/home/ayi/quick-entries', kind: 'serviceModules', moduleType: 'shortcut', filterTargetValue: 'ayi_home_quick', source: 'service_modules.shortcut', fields: [
+            ['title', '名称'],
+            ['summary', '说明', 'textarea'],
+            ['targetType', '跳转目标', 'select', ['ayi_profile', 'ayi_orders', 'ayi_applications', 'none']],
+            ['sort', '排序', 'number'],
+            ['visible', '是否显示', 'boolean']
+          ] },
+          { key: 'profile-prompt', title: '完善资料提示区', desc: '维护提示标题、说明、资料按钮文案、证件按钮文案和显示状态。', route: 'company-services/home/ayi/profile-prompt', kind: 'serviceModules', moduleType: 'highlight', filterTargetType: 'ayi_home_profile_prompt', source: 'service_modules.highlight', fields: [
+            ['title', '标题'],
+            ['summary', '说明', 'textarea'],
+            ['iconText', '资料按钮文案'],
+            ['targetValue', '证件按钮文案'],
+            ['visible', '是否显示', 'boolean']
+          ] },
+          { key: 'function-nav', title: '功能导航', desc: '维护工作、我的接单、实名认证等导航入口。', route: 'company-services/home/ayi/function-nav', kind: 'serviceModules', moduleType: 'shortcut', filterTargetValue: 'ayi_home_nav', source: 'service_modules.shortcut', fields: [
+            ['title', '名称'],
+            ['targetType', '跳转目标', 'select', ['service', 'ayi_orders', 'ayi_profile', 'ayi_certificates', 'none']],
+            ['sort', '排序', 'number'],
+            ['visible', '是否显示', 'boolean']
+          ] },
+          { key: 'recommended-jobs', title: '推荐工作区域', desc: '维护区域标题、查看更多文案、展示数量和显示状态；工作数据复用客户需求。', route: 'company-services/home/ayi/recommended-jobs', kind: 'serviceModules', moduleType: 'highlight', filterTargetType: 'ayi_home_recommended_jobs', source: 'service_modules.highlight + demands', fields: [
+            ['title', '区域标题'],
+            ['iconText', '查看更多文案'],
+            ['targetValue', '展示数量'],
+            ['visible', '是否显示', 'boolean']
+          ] }
+        ]
+      }
+    ]
+  },
+  {
+    key: 'service-page',
+    route: 'company-services/service-page',
+    title: '服务页配置',
+    desc: '按服务页实际页面继续下钻到客户服务页配置，避免混合显示客户端和阿姨端数据。',
+    cards: [
+      {
+        key: 'customer-service-page',
+        title: '客户服务页',
+        desc: '只维护客户身份服务页的搜索顶部、功能入口、服务类型、筛选条件和阿姨列表展示规则。',
+        route: 'company-services/service-page/customer',
+        kind: 'page',
+        source: 'customer-service-page',
+        cards: [
+          { key: 'search-top', title: '搜索与顶部配置', desc: '维护搜索框提示、页面顶部说明和显示状态；城市读取公共信息配置。', route: 'company-services/service-page/customer/search-top', kind: 'serviceModules', moduleType: 'highlight', filterTargetType: 'customer_service_search_top', source: 'service_modules.highlight + company_profile', fields: [
+            ['title', '搜索框提示文字'],
+            ['summary', '页面顶部说明', 'textarea'],
+            ['visible', '是否显示', 'boolean']
+          ] },
+          { key: 'customer-actions', title: '客户功能入口', desc: '维护发布需求、好阿姨严选、做饭好吃、养老护理等功能卡片。', route: 'company-services/service-page/customer/actions', kind: 'serviceModules', moduleType: 'shortcut', filterTargetValue: 'customer_service_actions', source: 'service_modules.shortcut', fields: [
+            ['title', '名称'],
+            ['summary', '说明', 'textarea'],
+            ['iconImage', '图标或图片', 'image'],
+            ['targetType', '跳转或筛选目标', 'select', ['demand', 'find_ayi', 'service', 'store', 'about', 'none']],
+            ['targetValue', '筛选参数'],
+            ['sort', '排序', 'number'],
+            ['visible', '是否显示', 'boolean']
+          ] },
+          { key: 'filters', title: '筛选条件', desc: '维护从业年限、价格、人气、综合筛选等前端已有筛选项显示。', route: 'company-services/service-page/customer/filters', kind: 'serviceModules', moduleType: 'highlight', filterTargetType: 'customer_service_filter', source: 'service_modules.highlight', fields: [
+            ['title', '名称'],
+            ['sort', '排序', 'number'],
+            ['visible', '是否显示', 'boolean']
+          ] },
+          { key: 'ayi-list', title: '阿姨列表展示', desc: '只配置列表展示规则，阿姨真实资料继续复用阿姨管理。显示项配置可填写逗号分隔值：rating,age,experience,hometown,intro,salary,schedule。', route: 'company-services/service-page/customer/ayi-list', kind: 'serviceModules', moduleType: 'highlight', filterTargetType: 'customer_service_ayi_list', source: 'service_modules.highlight + ayis', fields: [
+            ['title', '配置名称'],
+            ['iconText', '显示项配置'],
+            ['summary', '空列表提示文字', 'textarea'],
+            ['visible', '是否显示列表', 'boolean']
+          ] }
+        ]
+      },
+      {
+        key: 'ayi-service-page',
+        title: '阿姨服务页',
+        desc: '只维护阿姨身份服务页的顶部入口、找工作说明、工作列表展示和接单操作文案；服务类型读取统一家政服务类型。',
+        route: 'company-services/service-page/ayi',
+        kind: 'page',
+        source: 'ayi-service-page',
+        cards: [
+          { key: 'top-actions', title: '顶部功能入口', desc: '维护加入阳光北亚、实名认证等入口，复用个人资料和证件页面。', route: 'company-services/service-page/ayi/top-actions', kind: 'serviceModules', moduleType: 'shortcut', filterTargetValue: 'ayi_service_top_actions', source: 'service_modules.shortcut', fields: [
+            ['title', '名称'],
+            ['summary', '说明', 'textarea'],
+            ['targetType', '跳转目标', 'select', ['ayi_profile', 'ayi_certificates', 'none']],
+            ['sort', '排序', 'number'],
+            ['visible', '是否显示', 'boolean']
+          ] },
+          { key: 'job-top', title: '找工作顶部说明', desc: '维护小标题、主标题、说明文字、完善资料按钮和上传证件按钮文案。', route: 'company-services/service-page/ayi/job-top', kind: 'serviceModules', moduleType: 'highlight', filterTargetType: 'ayi_service_job_top', source: 'service_modules.highlight', fields: [
+            ['iconText', '小标题'],
+            ['title', '主标题'],
+            ['summary', '说明文字', 'textarea'],
+            ['targetType', '完善资料按钮文案'],
+            ['targetValue', '上传证件按钮文案'],
+            ['visible', '是否显示', 'boolean']
+          ] },
+          { key: 'job-list', title: '工作列表展示', desc: '只配置工作列表展示规则，真实工作数据继续复用客户需求。显示项配置可填写逗号分隔值：serviceType,budget,address,startTime,status,familyInfo。', route: 'company-services/service-page/ayi/job-list', kind: 'serviceModules', moduleType: 'highlight', filterTargetType: 'ayi_service_job_list', source: 'service_modules.highlight + demands', fields: [
+            ['title', '配置名称'],
+            ['iconText', '显示项配置'],
+            ['summary', '空列表提示文字', 'textarea'],
+            ['visible', '是否显示列表', 'boolean']
+          ] },
+          { key: 'apply-action', title: '接单操作配置', desc: '只维护申请按钮、已申请按钮、资料提示、成功提示和按钮显示规则，不修改真实申请记录。', route: 'company-services/service-page/ayi/apply-action', kind: 'serviceModules', moduleType: 'highlight', filterTargetType: 'ayi_service_apply_action', source: 'service_modules.highlight + applications', fields: [
+            ['title', '申请按钮文案'],
+            ['iconText', '已申请按钮文案'],
+            ['summary', '未完善资料提示', 'textarea'],
+            ['targetValue', '申请成功提示'],
+            ['visible', '是否允许显示申请按钮', 'boolean']
+          ] }
+        ]
+      }
+    ]
+  },
+  {
+    key: 'stores-page',
+    route: 'company-services/stores-page',
+    title: '门店页配置',
+    desc: '门店页配置只保留页面筛选和操作文案；真实门店资料统一在独立“门店信息”中维护。',
+    cards: [
+      { key: 'page-filter', title: '页面与筛选配置', desc: '维护城市、搜索提示、区域筛选、可住宿筛选和空列表提示。', route: 'company-services/stores-page/page-filter', kind: 'serviceModules', moduleType: 'highlight', filterTargetType: 'stores_page_filter', source: 'service_modules.highlight', fields: [
+        ['title', '城市名称'],
+        ['iconText', '搜索框提示文字'],
+        ['summary', '区域筛选选项，逗号分隔', 'textarea'],
+        ['targetType', '是否显示可住宿筛选', 'select', ['true', 'false']],
+        ['targetValue', '空列表提示文字'],
+        ['visible', '是否显示', 'boolean']
+      ] },
+      { key: 'actions', title: '门店操作配置', desc: '维护导航、电话、详情和导航未接入提示等按钮文案与显示规则。', route: 'company-services/stores-page/actions', kind: 'serviceModules', moduleType: 'highlight', filterTargetType: 'stores_page_actions', source: 'service_modules.highlight', fields: [
+        ['title', '导航按钮文案'],
+        ['iconText', '电话按钮文案'],
+        ['summary', '门店详情提示文案', 'textarea'],
+        ['targetValue', '导航未接入时的提示文案'],
+        ['targetType', '是否显示导航按钮', 'select', ['true', 'false']],
+        ['visible', '是否显示电话按钮', 'boolean']
+      ] }
+    ]
+  },
+  {
+    key: 'about-page',
+    route: 'company-services/about-page',
+    title: '公司介绍配置',
+    desc: '公司介绍页复用公司基础信息、服务类型和门店资料，不重复保存同一份资料。',
+    cards: [
+      { key: 'intro', title: '页面标题', desc: '只维护公司介绍页标题和显示状态；公司名称、Logo 和简介正文读取公共信息配置。', route: 'company-services/about-page/intro', kind: 'serviceModules', moduleType: 'highlight', filterTargetType: 'about_company_intro', source: 'service_modules.highlight + company_profile', fields: [
+        ['title', '页面标题'],
+        ['visible', '是否显示', 'boolean']
+      ] },
+      { key: 'service-flow', title: '服务流程', desc: '维护公司介绍页服务流程，和客户首页服务流程使用不同分组，互不串数据。', route: 'company-services/about-page/service-flow', kind: 'serviceModules', moduleType: 'highlight', filterTargetType: 'about_service_flow', source: 'service_modules.highlight', fields: [
+        ['iconText', '步骤编号'],
+        ['title', '标题'],
+        ['summary', '说明', 'textarea'],
+        ['sort', '排序', 'number'],
+        ['visible', '是否显示', 'boolean']
+      ] },
+      { key: 'service-guarantee', title: '服务保障', desc: '维护保障标题、说明、排序和显示状态。', route: 'company-services/about-page/service-guarantee', kind: 'serviceModules', moduleType: 'highlight', filterTargetType: 'about_service_guarantee', source: 'service_modules.highlight', fields: [
+        ['title', '保障标题'],
+        ['summary', '保障说明', 'textarea'],
+        ['sort', '排序', 'number'],
+        ['visible', '是否显示', 'boolean']
+      ] },
+      { key: 'customer-service', title: '客服咨询', desc: '维护客服咨询标题、说明和按钮文案；联系电话继续读取公共信息配置。', route: 'company-services/about-page/customer-service', kind: 'serviceModules', moduleType: 'highlight', filterTargetType: 'about_customer_service', source: 'service_modules.highlight + company_profile', fields: [
+        ['title', '标题'],
+        ['summary', '说明文字', 'textarea'],
+        ['iconText', '按钮文案'],
+        ['visible', '是否显示', 'boolean']
+      ] }
+    ]
+  },
+  {
+    key: 'mine-page',
+    route: 'company-services/mine-page',
+    title: '我的页面配置',
+    desc: '我的页面只管理辅助入口和提示文案，不编辑真实业务数据。',
+    cards: [
+      {
+        key: 'customer-mine',
+        title: '客户“我的”',
+        desc: '只维护客户身份“我的”页面的顶部、快捷入口、提示横幅、需求空状态和预约空状态。',
+        route: 'company-services/mine-page/customer',
+        kind: 'page',
+        source: 'customer-mine-page',
+        cards: [
+          { key: 'top-user', title: '顶部用户区域', desc: '维护页面标题、身份说明、提示文字和显示状态；默认品牌图标读取公共信息配置。', route: 'company-services/mine-page/customer/top-user', kind: 'serviceModules', moduleType: 'highlight', filterTargetType: 'customer_mine_top_user', source: 'service_modules.highlight + company_profile', fields: [
+            ['title', '页面标题'],
+            ['iconText', '身份说明'],
+            ['summary', '页面提示文字', 'textarea'],
+            ['visible', '是否显示', 'boolean']
+          ] },
+          { key: 'shortcuts', title: '客户快捷入口', desc: '维护发布需求、找阿姨、联系客服、切换身份等入口。', route: 'company-services/mine-page/customer/shortcuts', kind: 'serviceModules', moduleType: 'shortcut', filterTargetValue: 'customer_mine_shortcuts', source: 'service_modules.shortcut + company_profile', fields: [
+            ['title', '名称'],
+            ['iconImage', '图标', 'image'],
+            ['targetType', '跳转目标', 'select', ['demand', 'find_ayi', 'customer_service', 'switch_role', 'service', 'about', 'none']],
+            ['sort', '排序', 'number'],
+            ['visible', '是否显示', 'boolean']
+          ] },
+          { key: 'tip-banner', title: '客户提示横幅', desc: '维护提示文字和显示状态。', route: 'company-services/mine-page/customer/tip-banner', kind: 'serviceModules', moduleType: 'highlight', filterTargetType: 'customer_mine_tip_banner', source: 'service_modules.highlight', fields: [
+            ['summary', '提示文字', 'textarea'],
+            ['visible', '是否显示', 'boolean']
+          ] },
+          { key: 'demands', title: '我的需求区域', desc: '只配置需求区域标题和空状态，真实需求数据继续复用客户需求。', route: 'company-services/mine-page/customer/demands', kind: 'serviceModules', moduleType: 'highlight', filterTargetType: 'customer_mine_demands', source: 'service_modules.highlight + demands', fields: [
+            ['title', '区域标题'],
+            ['iconText', '空状态标题'],
+            ['summary', '空状态说明', 'textarea'],
+            ['targetValue', '空状态按钮文案'],
+            ['visible', '是否显示', 'boolean']
+          ] },
+          { key: 'appointments', title: '我的预约区域', desc: '只配置预约区域标题和空状态，真实预约数据继续复用预约记录。', route: 'company-services/mine-page/customer/appointments', kind: 'serviceModules', moduleType: 'highlight', filterTargetType: 'customer_mine_appointments', source: 'service_modules.highlight + appointments', fields: [
+            ['title', '区域标题'],
+            ['iconText', '空状态标题'],
+            ['summary', '空状态说明', 'textarea'],
+            ['targetValue', '空状态按钮文案'],
+            ['visible', '是否显示', 'boolean']
+          ] }
+        ]
+      },
+      {
+        key: 'ayi-mine',
+        title: '阿姨“我的”',
+        desc: '只维护阿姨身份“我的”页面的顶部、快捷入口、审核提示、接单申请空状态和提示横幅。',
+        route: 'company-services/mine-page/ayi',
+        kind: 'page',
+        source: 'ayi-mine-page',
+        cards: [
+          { key: 'top-user', title: '顶部用户区域', desc: '维护页面标题、身份说明、提示文字和显示状态；默认品牌图标读取公共信息配置。', route: 'company-services/mine-page/ayi/top-user', kind: 'serviceModules', moduleType: 'highlight', filterTargetType: 'ayi_mine_top_user', source: 'service_modules.highlight + company_profile', fields: [
+            ['title', '页面标题'],
+            ['iconText', '身份说明'],
+            ['summary', '页面提示文字', 'textarea'],
+            ['visible', '是否显示', 'boolean']
+          ] },
+          { key: 'shortcuts', title: '阿姨快捷入口', desc: '维护我的资料、我的证件、找工作、我的接单/申请、联系客服、切换身份等入口。', route: 'company-services/mine-page/ayi/shortcuts', kind: 'serviceModules', moduleType: 'shortcut', filterTargetValue: 'ayi_mine_shortcuts', source: 'service_modules.shortcut + company_profile', fields: [
+            ['title', '名称'],
+            ['iconImage', '图标', 'image'],
+            ['targetType', '跳转目标', 'select', ['ayi_profile', 'ayi_certificates', 'service', 'ayi_orders', 'ayi_applications', 'customer_service', 'switch_role', 'none']],
+            ['sort', '排序', 'number'],
+            ['visible', '是否显示', 'boolean']
+          ] },
+          { key: 'review-status', title: '资料审核区域', desc: '只配置资料审核提示文案，真实资料、证件和审核状态继续复用阿姨资料。', route: 'company-services/mine-page/ayi/review-status', kind: 'serviceModules', moduleType: 'highlight', filterTargetType: 'ayi_mine_review_status', source: 'service_modules.highlight + ayis', fields: [
+            ['title', '区域标题'],
+            ['iconText', '未完善资料提示'],
+            ['summary', '审核中提示', 'textarea'],
+            ['targetType', '审核通过提示'],
+            ['targetValue', '审核未通过提示与操作按钮文案'],
+            ['visible', '是否显示', 'boolean']
+          ] },
+          { key: 'orders-applications', title: '我的接单与申请区域', desc: '只配置接单和申请区域标题及空状态，真实记录继续复用现有业务数据。', route: 'company-services/mine-page/ayi/orders-applications', kind: 'serviceModules', moduleType: 'highlight', filterTargetType: 'ayi_mine_orders_applications', source: 'service_modules.highlight + applications + orders', fields: [
+            ['title', '区域标题'],
+            ['iconText', '空状态标题'],
+            ['summary', '空状态说明', 'textarea'],
+            ['targetValue', '空状态按钮文案'],
+            ['visible', '是否显示', 'boolean']
+          ] },
+          { key: 'tip-banner', title: '阿姨提示横幅', desc: '维护提示文字、跳转按钮文案、跳转目标和显示状态。', route: 'company-services/mine-page/ayi/tip-banner', kind: 'serviceModules', moduleType: 'highlight', filterTargetType: 'ayi_mine_tip_banner', source: 'service_modules.highlight', fields: [
+            ['summary', '提示文字', 'textarea'],
+            ['iconText', '跳转按钮文案'],
+            ['targetValue', '跳转目标'],
+            ['visible', '是否显示', 'boolean']
+          ] }
+        ]
+      }
+    ]
+  }
+];
+
+
+const companyServiceFeatureRoutes = new Map();
+function collectCompanyServiceCards(page, cards = page.cards || []) {
+  cards.forEach((card) => {
+    const feature = Object.assign({ page }, card);
+    companyServiceFeatureRoutes.set(card.route, feature);
+    if (Array.isArray(card.cards)) {
+      collectCompanyServiceCards(card, card.cards);
+    }
+  });
+}
+companyServicePages.forEach((page) => collectCompanyServiceCards(page));
+companyServicePages
+  .filter((page) => page.kind === 'serviceModules')
+  .forEach((page) => {
+    companyServiceFeatureRoutes.set(page.route, Object.assign({
+      page: { route: 'company-services', title: '公司服务' }
+    }, page));
+  });
+
+const legacyCompanyServiceRedirects = {
+  'company-services/home/customer/service-types': 'company-services/service-types',
+  'company-services/service-page/customer/service-types': 'company-services/service-types',
+  'company-services/service-page/ayi/service-types': 'company-services/service-types',
+  'company-services/about-page/service-scope': 'company-services/service-types',
+  'company-services/home/customer/featured-ayis': 'ayis',
+  'company-services/stores-page/store-list': 'stores',
+  'company-services/about-page/stores': 'stores',
+  'company-services/about-page/contact': 'company-services/common-info'
+};
+
+const serviceModuleSections = Array.from(companyServiceFeatureRoutes.values())
+  .filter((card) => card.kind === 'serviceModules')
+  .map((card) => {
+    const preset = serviceModuleFieldPresets[card.moduleType];
+    return {
+      key: card.key,
+      route: card.route,
+      pageRoute: card.page.route,
+      moduleType: preset.moduleType,
+      title: card.title,
+      desc: card.desc,
+      filterTargetType: card.filterTargetType || '',
+      filterTargetValue: card.filterTargetValue || '',
+      fields: card.fields || preset.fields
+    };
+  });
 
 function displayRoleName(role) {
   return roleDisplayMap[role] || role || '-';
@@ -315,9 +778,63 @@ const currentUserLabel = document.querySelector('#currentUser');
 const backHomeBtn = document.querySelector('#backHomeBtn');
 
 const roleAccess = {
-  boss: ['dashboard', 'accounts', 'companyProfile', 'ayis', 'demands', 'appointments', 'applications', 'orders', 'orderDispatches', 'stores', 'serviceModules', 'banners'],
-  operator: ['ayis', 'demands', 'appointments', 'applications', 'orders', 'orderDispatches', 'stores', 'serviceModules', 'banners']
+  boss: ['dashboard', 'accounts', 'auditLogs', 'todos', 'companyProfile', 'ayis', 'demands', 'appointments', 'applications', 'orders', 'orderDispatches', 'stores', 'serviceModules', 'banners'],
+  operator: ['todos', 'ayis', 'demands', 'appointments', 'applications', 'orders', 'orderDispatches', 'stores', 'serviceModules', 'banners']
 };
+
+const demandCategories = [
+  {
+    key: 'pending',
+    label: '\u5f85\u5904\u7406',
+    hint: '\u65b0\u63d0\u4ea4\u6216\u5c1a\u672a\u8fdb\u5165\u8ddf\u8fdb\u7684\u9700\u6c42',
+    statuses: ['\u5f85\u5904\u7406', '\u5f85\u8ddf\u8fdb', '\u987e\u95ee\u5f85\u8054\u7cfb']
+  },
+  {
+    key: 'contacted',
+    label: '\u5df2\u8054\u7cfb',
+    hint: '\u5df2\u5b8c\u6210\u521d\u6b65\u6c9f\u901a\u7684\u9700\u6c42',
+    statuses: ['\u5df2\u8054\u7cfb']
+  },
+  {
+    key: 'matching',
+    label: '\u5339\u914d\u4e2d',
+    hint: '\u6b63\u5728\u63a8\u8350\u6216\u7b5b\u9009\u963f\u59e8',
+    statuses: ['\u5339\u914d\u4e2d', '\u5f85\u5339\u914d', '\u5df2\u63a8\u8350']
+  },
+  {
+    key: 'matched',
+    label: '\u5df2\u5339\u914d',
+    hint: '\u5df2\u786e\u8ba4\u5339\u914d\u6216\u5df2\u9762\u8bd5\u6210\u4ea4',
+    statuses: ['\u5df2\u5339\u914d', '\u5df2\u9762\u8bd5', '\u5df2\u6210\u4ea4']
+  },
+  {
+    key: 'closed',
+    label: '\u5df2\u5173\u95ed',
+    hint: '\u5df2\u53d6\u6d88\u3001\u5173\u95ed\u6216\u4e0d\u518d\u7ee7\u7eed\u8ddf\u8fdb',
+    statuses: ['\u5df2\u5173\u95ed', '\u5df2\u53d6\u6d88']
+  }
+];
+
+const ayiCategories = [
+  {
+    key: 'verified',
+    label: '\u5df2\u8ba4\u8bc1',
+    hint: '\u5ba1\u6838\u901a\u8fc7\u4e14\u5df2\u4e0a\u67b6\u5c55\u793a',
+    match: (item) => item.visible !== false && isCertifiedAyiStatus(item.status)
+  },
+  {
+    key: 'pending',
+    label: '\u5f85\u5ba1\u6838',
+    hint: '\u5c1a\u672a\u8ba4\u8bc1\u6216\u8ba4\u8bc1\u672a\u901a\u8fc7',
+    match: (item) => item.visible !== false && !isCertifiedAyiStatus(item.status)
+  },
+  {
+    key: 'downlisted',
+    label: '\u5df2\u4e0b\u67b6',
+    hint: '\u4e0d\u5728\u5c0f\u7a0b\u5e8f\u516c\u5f00\u5c55\u793a',
+    match: (item) => item.visible === false
+  }
+];
 
 const accountGroups = [
   {
@@ -374,10 +891,115 @@ function displaySelectOption(key, option) {
     customer_service: '客服咨询',
     about: '公司介绍',
     service: '服务页',
-    store: '门店'
+    store: '门店',
+    ayi_profile: '个人资料',
+    ayi_orders: '我的接单',
+    ayi_applications: '我的申请',
+    ayi_certificates: '我的证件',
+    switch_role: '切换身份'
   };
   if (key === 'targetType') return targetMap[option] || option;
   return option;
+}
+
+function parseHashRoute() {
+  const raw = (location.hash || '#/home').replace(/^#\/?/, '') || 'home';
+  const [route, query = ''] = raw.split('?');
+  const params = {};
+  query.split('&').filter(Boolean).forEach((part) => {
+    const [key, value = ''] = part.split('=');
+    if (!key) return;
+    params[decodeURIComponent(key)] = decodeURIComponent(value);
+  });
+  return {
+    route: route || 'home',
+    params
+  };
+}
+
+function routeWithCategory(resource, key) {
+  const route = resourceToRouteMap[resource] || resource;
+  if (!key) return route;
+  const param = resource === 'demands' ? 'status' : 'category';
+  return `${route}?${param}=${encodeURIComponent(key)}`;
+}
+
+function isCertifiedAyiStatus(status) {
+  return ['\u5df2\u8ba4\u8bc1', 'approved'].includes(status);
+}
+
+function getCategoriesForResource(resource) {
+  if (resource === 'demands') return demandCategories;
+  if (resource === 'ayis') return ayiCategories;
+  return null;
+}
+
+function getCategoryKeyFromRoute(resource, params = {}) {
+  if (resource === 'demands') return params.status || '';
+  if (resource === 'ayis') return params.category || '';
+  return '';
+}
+
+function demandCategoryForRecord(item) {
+  const status = item.status || '';
+  return demandCategories.find((category) => category.statuses.includes(status)) || null;
+}
+
+function recordMatchesCategory(resource, category, item) {
+  if (!category) return true;
+  if (resource === 'demands') return demandCategoryForRecord(item)?.key === category.key;
+  if (resource === 'ayis') return category.match(item);
+  return true;
+}
+
+function getFilteredCache() {
+  if (!currentModuleCategory) return cache;
+  return cache.filter((item) => recordMatchesCategory(currentResource, currentModuleCategory, item));
+}
+
+function isSearchableCategoryResource(resource) {
+  return ['demands', 'ayis'].includes(resource);
+}
+
+function getSearchableRecordText(resource, item) {
+  const values = resource === 'ayis'
+    ? [
+        item.name,
+        item.phone,
+        item.source,
+        item.age,
+        item.hometown,
+        item.serviceType,
+        item.experience,
+        item.liveType,
+        item.salary,
+        item.availableTime,
+        Array.isArray(item.skills) ? item.skills.join(' ') : item.skills,
+        item.status,
+        item.intro,
+        item.storeId,
+        item.featuredTitle
+      ]
+    : [
+        item.customerName,
+        item.phone,
+        item.source,
+        item.serviceType,
+        item.city,
+        item.address,
+        item.startTime,
+        item.budget,
+        item.familyInfo,
+        item.consultant,
+        item.followNote,
+        item.status
+      ];
+  return values.filter((value) => value !== undefined && value !== null).join(' ').toLowerCase();
+}
+
+function recordMatchesSearch(resource, item, query) {
+  if (!query) return true;
+  return getSearchableRecordText(resource, item).includes(query);
 }
 
 function escapeHtml(value) {
@@ -430,7 +1052,47 @@ function getAllowedResources() {
 }
 
 function getRouteFromHash() {
-  return (location.hash || '#/home').replace(/^#\/?/, '') || 'home';
+  return parseHashRoute().route;
+}
+
+function getServiceModuleSectionByRoute(route) {
+  return serviceModuleSections.find((section) => section.route === route) || null;
+}
+
+function getServiceModuleSectionByType(moduleType) {
+  return serviceModuleSections.find((section) => section.moduleType === moduleType) || null;
+}
+
+function getCompanyServicePageByRoute(route) {
+  return companyServicePages.find((page) => page.route === route && page.kind !== 'serviceModules') || null;
+}
+
+function getCompanyServiceFeatureByRoute(route) {
+  return companyServiceFeatureRoutes.get(route) || null;
+}
+
+function renderCompanyServiceBackLinks(pageRoute = 'company-services') {
+  return `
+    <div class="category-list-header">
+      <button class="secondary" data-action="route-card" data-route="${escapeHtml(pageRoute)}">返回上一级</button>
+      <button class="secondary" data-action="route-card" data-route="company-services">返回公司服务</button>
+    </div>
+  `;
+}
+
+function getCurrentFields() {
+  if (currentResource === 'serviceModules') {
+    const section = getServiceModuleSectionByRoute(currentRoute) || getServiceModuleSectionByType(currentRecord && currentRecord.moduleType);
+    if (section) return section.fields;
+  }
+  return resources[currentResource].fields || [];
+}
+
+function getServiceModuleApiPath(id = '') {
+  const section = getServiceModuleSectionByRoute(currentRoute);
+  const suffix = section ? `moduleType=${encodeURIComponent(section.moduleType)}` : '';
+  const base = id ? `serviceModules/${id}` : 'serviceModules';
+  return suffix ? `${base}?${suffix}` : base;
 }
 
 function setRoute(route) {
@@ -445,8 +1107,9 @@ function setRoute(route) {
 function markActiveRoute(route) {
   document.body.classList.toggle('route-home', route === 'home');
   document.body.classList.toggle('route-module', route !== 'home');
+  const activeRoute = route.startsWith('company-services/') ? 'company-services' : route;
   document.querySelectorAll('.tab').forEach((tab) => {
-    tab.classList.toggle('active', tab.dataset.route === route);
+    tab.classList.toggle('active', tab.dataset.route === activeRoute);
   });
 }
 
@@ -464,19 +1127,33 @@ function applyAuthShell() {
   });
 }
 
-async function loadResource(resource = currentResource) {
+async function loadResource(resource = currentResource, options = {}) {
   const allowed = getAllowedResources();
   if (currentUser && allowed.length && !allowed.includes(resource)) {
     renderHome();
     return;
   }
   currentResource = resource;
-  currentRoute = resourceToRouteMap[resource] || resource;
+  currentRoute = options.route || resourceToRouteMap[resource] || resource;
   currentRecord = null;
   const meta = resources[resource];
-  sectionTitle.textContent = meta.title;
-  sectionDesc.textContent = meta.desc;
-  formTitle.textContent = `新增${meta.title}`;
+  const categories = getCategoriesForResource(resource);
+  const hasCategoryOption = Object.prototype.hasOwnProperty.call(options, 'categoryKey');
+  const categoryKey = hasCategoryOption
+    ? options.categoryKey
+    : (currentModuleCategory && currentModuleCategory.resource === resource ? currentModuleCategory.key : '');
+  const selectedCategory = categories ? categories.find((item) => item.key === categoryKey) : null;
+  currentModuleCategory = selectedCategory ? Object.assign({ resource }, selectedCategory) : null;
+  const serviceSection = resource === 'serviceModules' ? getServiceModuleSectionByRoute(currentRoute) : null;
+  const companyFeature = getCompanyServiceFeatureByRoute(currentRoute);
+  const nextSearchKey = currentModuleCategory ? `${resource}:${currentModuleCategory.key}` : '';
+  if (nextSearchKey !== currentModuleSearchKey) {
+    currentModuleSearchKey = nextSearchKey;
+    currentModuleSearchQuery = '';
+  }
+  sectionTitle.textContent = companyFeature ? companyFeature.title : (serviceSection ? serviceSection.title : meta.title);
+  sectionDesc.textContent = companyFeature ? companyFeature.desc : (serviceSection ? serviceSection.desc : meta.desc);
+  formTitle.textContent = `新增${companyFeature ? companyFeature.title : (serviceSection ? serviceSection.title : meta.title)}`;
   document.querySelector('#addBtn').hidden = Boolean(meta.custom);
   closeEditor();
   markActiveRoute(currentRoute);
@@ -485,6 +1162,20 @@ async function loadResource(resource = currentResource) {
     renderDashboard(dashboard);
     form.innerHTML = '<p class="muted">管理看板为管理端查看页，不需要在右侧编辑。</p>';
     formTitle.textContent = '看板说明';
+    return;
+  }
+  if (meta.custom === 'auditLogs') {
+    await loadAuditLogs();
+    renderAuditLogs();
+    form.innerHTML = '<p class="muted">\u64cd\u4f5c\u8bb0\u5f55\u4ec5\u7ba1\u7406\u7aef\u53ef\u89c1\uff0c\u8bb0\u5f55\u6765\u81ea audit_logs\u3002</p>';
+    formTitle.textContent = '\u5b89\u5168\u8bf4\u660e';
+    return;
+  }
+  if (meta.custom === 'todos') {
+    await loadTodos();
+    renderTodos();
+    form.innerHTML = '<p class="muted">今日待办按负责人和下次跟进时间生成，点击“进入客户详情”处理跟进。</p>';
+    formTitle.textContent = '待办说明';
     return;
   }
   if (meta.custom === 'companyProfile') {
@@ -496,13 +1187,294 @@ async function loadResource(resource = currentResource) {
     layout.classList.add('editor-open');
     return;
   }
-  cache = await api(resource);
+  cache = resource === 'serviceModules' && getServiceModuleSectionByRoute(currentRoute)
+    ? await api(getServiceModuleApiPath())
+    : await api(resource);
+  if (categories && !selectedCategory) {
+    document.querySelector('#addBtn').hidden = true;
+    renderCategoryHome(resource);
+    return;
+  }
   renderList();
+}
+
+function renderServiceModulesHome() {
+  currentResource = 'serviceModules';
+  currentRoute = 'company-services';
+  currentRecord = null;
+  cache = [];
+  closeEditor();
+  markActiveRoute('company-services');
+  sectionTitle.textContent = '公司服务';
+  sectionDesc.textContent = '按小程序前端页面组织配置入口。页面配置只做分区导航，真实数据继续复用轮播、服务、门店、公司信息和阿姨管理。';
+  document.querySelector('#addBtn').hidden = true;
+  formTitle.textContent = '配置原则';
+  form.innerHTML = '<p class="muted">每一级均为“页面入口 → 功能卡片 → 具体列表或编辑页”。服务类型、门店、公司电话和阿姨资料只保留一套数据源，不在页面配置中重复保存。</p>';
+  const allowed = getAllowedResources();
+  const visiblePages = companyServicePages.filter((page) => allowed.includes(page.resource || 'serviceModules'));
+  list.innerHTML = `
+    <div class="home-grid">
+      ${visiblePages.map((page) => `
+        <button class="module-card" data-action="route-card" data-route="${escapeHtml(page.route)}">
+          <span>${escapeHtml(page.title)}</span>
+          <small>${escapeHtml(page.desc)}</small>
+        </button>
+      `).join('')}
+    </div>
+  `;
+}
+
+function renderCompanyServicePage(page) {
+  currentResource = 'serviceModules';
+  currentRoute = page.route;
+  currentRecord = null;
+  cache = [];
+  closeEditor();
+  markActiveRoute(page.route);
+  sectionTitle.textContent = page.title;
+  sectionDesc.textContent = page.desc;
+  document.querySelector('#addBtn').hidden = true;
+  formTitle.textContent = '页面分区';
+  form.innerHTML = `<p class="muted">${escapeHtml(page.title)} 只展示本页面相关功能卡片。点击卡片后进入对应的真实数据列表或编辑页。</p>`;
+  const parentRoute = page.page ? page.page.route : 'company-services';
+  const backLabel = page.page ? `返回${page.page.title}` : '返回公司服务';
+  list.innerHTML = `
+    <div class="category-list-header">
+      <button class="secondary" data-action="route-card" data-route="${escapeHtml(parentRoute)}">${escapeHtml(backLabel)}</button>
+      <div>
+        <strong>${escapeHtml(page.title)}</strong>
+        <span>${page.cards.length} 个功能卡片</span>
+      </div>
+    </div>
+    <div class="home-grid">
+      ${page.cards.map((card) => `
+        <button class="module-card" data-action="route-card" data-route="${escapeHtml(card.route)}">
+          <span>${escapeHtml(card.title)}</span>
+          <small>${escapeHtml(card.desc)}</small>
+        </button>
+      `).join('')}
+    </div>
+  `;
+}
+
+async function renderCompanyServiceFeature(feature, params = {}) {
+  if (feature.kind === 'page') {
+    renderCompanyServicePage(feature);
+    return;
+  }
+
+  if (feature.kind === 'homeHero') {
+    await renderCustomerHomeHero(feature);
+    return;
+  }
+
+  if (feature.kind === 'serviceModules') {
+    const section = getServiceModuleSectionByRoute(feature.route);
+    if (!section) {
+      renderCompanyServiceNotice(feature);
+      return;
+    }
+    if (params.item) {
+      await renderServiceModuleItemPage(section, params.item);
+    } else {
+      await renderServiceModuleSectionHome(section);
+    }
+    return;
+  }
+
+  if (feature.kind === 'resource') {
+    await loadResource(feature.resource, { route: feature.route });
+    return;
+  }
+
+  renderCompanyServiceNotice(feature);
+}
+
+function parseJsonValue(value, fallback = {}) {
+  if (!value) return fallback;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' ? parsed : fallback;
+  } catch (error) {
+    return fallback;
+  }
+}
+
+async function renderCustomerHomeHero(feature) {
+  currentResource = 'serviceModules';
+  currentRoute = feature.route;
+  currentRecord = null;
+  cache = [];
+  closeEditor();
+  markActiveRoute(feature.route);
+  sectionTitle.textContent = feature.title;
+  sectionDesc.textContent = feature.desc;
+  document.querySelector('#addBtn').hidden = true;
+  formTitle.textContent = '编辑顶部主视觉';
+
+  const records = await api('serviceModules?moduleType=highlight');
+  const record = (records || []).find((item) => item.targetType === 'customer_home_hero') || null;
+  const extra = parseJsonValue(record && record.targetValue, {});
+  currentRecord = record;
+  list.innerHTML = `
+    ${renderCompanyServiceBackLinks(feature.page.route)}
+    <article class="record">
+      <div>
+        <div class="record-title">${escapeHtml(record ? (record.title || '顶部主视觉') : '顶部主视觉暂未配置')}</div>
+        <div class="record-line">城市、公司名称和 Logo：读取公共信息配置</div>
+        <div class="record-line">副标题：${escapeHtml(record?.summary || '-')}</div>
+        <div class="record-line">按钮：${escapeHtml(extra.primaryButtonText || '-')} / ${escapeHtml(extra.secondaryButtonText || '-')}</div>
+      </div>
+    </article>
+  `;
+  form.dataset.mode = 'customer-home-hero';
+  form.innerHTML = `
+    <div class="field"><label>主标题</label><input name="mainTitle" value="${escapeHtml(record?.title || '')}" /></div>
+    <div class="field"><label>副标题</label><textarea name="subtitle">${escapeHtml(record?.summary || '')}</textarea></div>
+    <div class="field"><label>主按钮文案</label><input name="primaryButtonText" value="${escapeHtml(extra.primaryButtonText || '')}" /></div>
+    <div class="field"><label>主按钮跳转</label><select name="primaryButtonTarget">
+      ${['demand', 'service', 'find_ayi', 'about', 'store', 'none'].map((value) => `<option value="${value}" ${extra.primaryButtonTarget === value ? 'selected' : ''}>${escapeHtml(displaySelectOption('targetType', value))}</option>`).join('')}
+    </select></div>
+    <div class="field"><label>副按钮文案</label><input name="secondaryButtonText" value="${escapeHtml(extra.secondaryButtonText || '')}" /></div>
+    <div class="field"><label>副按钮跳转</label><select name="secondaryButtonTarget">
+      ${['service', 'find_ayi', 'demand', 'about', 'store', 'none'].map((value) => `<option value="${value}" ${extra.secondaryButtonTarget === value ? 'selected' : ''}>${escapeHtml(displaySelectOption('targetType', value))}</option>`).join('')}
+    </select></div>
+    <div class="form-actions">
+      <button type="submit">保存顶部主视觉</button>
+    </div>
+  `;
+  editor.classList.add('is-open');
+  layout.classList.add('editor-open');
+}
+
+function renderCompanyServiceNotice(feature) {
+  currentRoute = feature.route;
+  currentRecord = null;
+  cache = [];
+  closeEditor();
+  markActiveRoute(feature.route);
+  sectionTitle.textContent = feature.title;
+  sectionDesc.textContent = feature.desc;
+  document.querySelector('#addBtn').hidden = true;
+  formTitle.textContent = '数据复用说明';
+  form.innerHTML = '<p class="muted">本功能当前不单独创建内容表，避免复制真实业务数据。需要维护时请进入对应的数据来源模块。</p>';
+  const actionButton = feature.targetRoute
+    ? `<button data-action="route-card" data-route="${escapeHtml(feature.targetRoute)}">进入数据来源</button>`
+    : '';
+  list.innerHTML = `
+    ${renderCompanyServiceBackLinks(feature.page.route)}
+    <article class="record">
+      <div>
+        <div class="record-title">${escapeHtml(feature.title)}</div>
+        <div class="record-line">${escapeHtml(feature.desc)}</div>
+        <div class="record-line">数据来源：${escapeHtml(feature.source || '-')}</div>
+      </div>
+      <div class="record-actions">${actionButton}</div>
+    </article>
+  `;
+}
+
+async function renderServiceModuleSectionHome(section) {
+  currentResource = 'serviceModules';
+  currentRoute = section.route;
+  currentRecord = null;
+  closeEditor();
+  markActiveRoute(section.route);
+  sectionTitle.textContent = section.title;
+  sectionDesc.textContent = `${section.desc} 点击一个小功能后进入单条查看和编辑。`;
+  document.querySelector('#addBtn').hidden = section.moduleType === 'service' && !section.filterTargetType;
+  formTitle.textContent = '页面说明';
+  form.innerHTML = '<p class="muted">本页只显示当前模块下已有数据生成的小功能入口，不混入其他类型数据。</p>';
+  cache = await api(getServiceModuleApiPath());
+  if (section.filterTargetType) {
+    cache = cache.filter((item) => item.targetType === section.filterTargetType);
+  }
+  if (section.filterTargetValue) {
+    cache = cache.filter((item) => item.targetValue === section.filterTargetValue);
+  }
+
+  const cards = cache.map((item) => {
+    const subtitle = item.moduleType === 'shortcut'
+      ? displaySelectOption('targetType', item.targetType || 'none')
+      : item.summary || item.iconText || '';
+    return `
+      <button class="module-card" data-action="route-card" data-route="${escapeHtml(`${section.route}?item=${item.id}`)}">
+        <span>${escapeHtml(item.title || `记录 ${item.id}`)}</span>
+        <small>${escapeHtml(subtitle || `排序 ${item.sort || 0}`)}</small>
+      </button>
+    `;
+  }).join('');
+
+  list.innerHTML = `
+    <div class="category-list-header">
+      <button class="secondary" data-action="route-card" data-route="${escapeHtml(section.pageRoute || 'company-services')}">返回上一级</button>
+      <button class="secondary" data-action="route-card" data-route="company-services">返回公司服务</button>
+      <div>
+        <strong>${escapeHtml(section.title)}</strong>
+        <span>${cache.length} 个小功能</span>
+      </div>
+    </div>
+    <div class="home-grid">
+      ${cards || '<p class="muted">当前模块暂无可编辑数据。</p>'}
+    </div>
+  `;
+}
+
+async function renderServiceModuleItemPage(section, itemId) {
+  currentResource = 'serviceModules';
+  currentRoute = section.route;
+  currentRecord = null;
+  closeEditor();
+  markActiveRoute(section.route);
+  sectionTitle.textContent = section.title;
+  sectionDesc.textContent = '当前页面只编辑选中的这一条数据。';
+  document.querySelector('#addBtn').hidden = true;
+
+  const record = await api(getServiceModuleApiPath(itemId));
+  const matchesSection = record
+    && (!section.filterTargetType || record.targetType === section.filterTargetType)
+    && (!section.filterTargetValue || record.targetValue === section.filterTargetValue);
+  cache = matchesSection ? [record] : [];
+  if (!matchesSection) {
+    list.innerHTML = `
+      <div class="category-list-header">
+        <button class="secondary" data-action="route-card" data-route="${escapeHtml(section.route)}">返回上一级</button>
+      </div>
+      <p class="muted">没有找到该数据，可能已被删除或类型不匹配。</p>
+    `;
+    return;
+  }
+
+  list.innerHTML = `
+    <div class="category-list-header">
+      <button class="secondary" data-action="route-card" data-route="${escapeHtml(section.route)}">返回上一级</button>
+      <button class="secondary" data-action="route-card" data-route="${escapeHtml(section.pageRoute || 'company-services')}">返回页面配置</button>
+      <button class="secondary" data-action="route-card" data-route="company-services">返回公司服务</button>
+      <div>
+        <strong>${escapeHtml(record.title || `记录 ${record.id}`)}</strong>
+        <span>${escapeHtml(displayModuleType(record.moduleType))}</span>
+      </div>
+    </div>
+    <article class="record">
+      <div>
+        <div class="record-title">${escapeHtml(record.title || '-')}</div>
+        <div class="record-line">${escapeHtml(record.summary || '-')}</div>
+        <div class="record-line">排序：${escapeHtml(record.sort || 0)} / 显示：${escapeHtml(String(record.visible))}</div>
+      </div>
+    </article>
+  `;
+
+  renderForm(record);
+  editor.classList.add('is-open');
+  layout.classList.add('editor-open');
 }
 
 function renderHome() {
   currentRoute = 'home';
   currentRecord = null;
+  currentModuleCategory = null;
+  currentModuleSearchKey = '';
+  currentModuleSearchQuery = '';
   cache = [];
   closeEditor();
   markActiveRoute('home');
@@ -512,7 +1484,7 @@ function renderHome() {
   formTitle.textContent = '页面说明';
   form.innerHTML = '<p class="muted">点击左侧导航或下方入口卡片进入对应模块。进入模块后，只显示当前模块内容。</p>';
 
-  const cards = getAllowedResources().map((resource) => {
+  const cards = getAllowedResources().filter((resource) => !['banners', 'companyProfile'].includes(resource)).map((resource) => {
     const meta = resources[resource];
     const route = resourceToRouteMap[resource] || resource;
     return `
@@ -532,9 +1504,50 @@ function renderHome() {
 
 async function renderRoute() {
   if (!currentUser || !roleAccess[currentUser.role]) return;
-  const route = getRouteFromHash();
+  const parsed = parseHashRoute();
+  const route = parsed.route;
+  if (route === 'company') {
+    setRoute('company-services/common-info');
+    return;
+  }
+  if (legacyCompanyServiceRedirects[route]) {
+    setRoute(legacyCompanyServiceRedirects[route]);
+    return;
+  }
   if (route === 'home') {
     renderHome();
+    return;
+  }
+  if (route === 'company-services') {
+    if (!getAllowedResources().includes('serviceModules')) {
+      setRoute('home');
+      return;
+    }
+    renderServiceModulesHome();
+    return;
+  }
+  const companyServicePage = getCompanyServicePageByRoute(route);
+  if (companyServicePage) {
+    const requiredResource = companyServicePage.resource || 'serviceModules';
+    if (!getAllowedResources().includes(requiredResource)) {
+      setRoute('home');
+      return;
+    }
+    if (companyServicePage.kind === 'resource') {
+      await loadResource(companyServicePage.resource, { route: companyServicePage.route });
+      return;
+    }
+    renderCompanyServicePage(companyServicePage);
+    return;
+  }
+  const companyServiceFeature = getCompanyServiceFeatureByRoute(route);
+  if (companyServiceFeature) {
+    const requiredResource = companyServiceFeature.resource || 'serviceModules';
+    if (!getAllowedResources().includes(requiredResource)) {
+      setRoute(companyServiceFeature.page.route);
+      return;
+    }
+    await renderCompanyServiceFeature(companyServiceFeature, parsed.params);
     return;
   }
   const resource = routeToResourceMap[route];
@@ -547,7 +1560,26 @@ async function renderRoute() {
     setRoute('home');
     return;
   }
-  await loadResource(resource);
+  const categories = getCategoriesForResource(resource);
+  const categoryKey = getCategoryKeyFromRoute(resource, parsed.params);
+  if (resource === 'serviceModules' && !getServiceModuleSectionByRoute(route)) {
+    setRoute('company-services');
+    return;
+  }
+  const serviceSection = resource === 'serviceModules' ? getServiceModuleSectionByRoute(route) : null;
+  if (serviceSection) {
+    if (parsed.params.item) {
+      await renderServiceModuleItemPage(serviceSection, parsed.params.item);
+    } else {
+      await renderServiceModuleSectionHome(serviceSection);
+    }
+    return;
+  }
+  if (categories && categoryKey && !categories.some((item) => item.key === categoryKey)) {
+    setRoute(route);
+    return;
+  }
+  await loadResource(resource, { categoryKey, route });
 }
 
 function openEditor(record = null) {
@@ -594,12 +1626,300 @@ function renderDashboard(data) {
   `;
 }
 
-function renderCompanyProfile(profile) {
+function auditActionLabel(action) {
+  const labels = {
+    create: '\u65b0\u589e',
+    update: '\u4fee\u6539',
+    delete: '\u5220\u9664',
+    dispatch: '\u6d3e\u5355',
+    recommend: '\u63a8\u8350\u963f\u59e8',
+    expire: '\u6807\u8bb0\u5931\u6548',
+    customer_confirm: '\u5ba2\u6237\u786e\u8ba4',
+    customer_reject: '\u5ba2\u6237\u62d2\u7edd',
+    login: '\u767b\u5f55',
+    logout: '\u9000\u51fa'
+  };
+  return labels[action] || action || '-';
+}
+
+function auditResourceLabel(resource) {
+  const labels = {
+    accounts: '\u8d26\u53f7\u6743\u9650',
+    auth: '\u767b\u5f55\u8ba4\u8bc1',
+    ayis: '\u963f\u59e8\u7ba1\u7406',
+    banners: '\u9996\u9875\u8f6e\u64ad',
+    companyProfile: '\u516c\u53f8\u57fa\u7840\u4fe1\u606f',
+    demand_matches: '\u9700\u6c42\u5339\u914d',
+    demands: '\u5ba2\u6237\u9700\u6c42',
+    order_dispatches: '\u4eba\u5de5\u6d3e\u5355',
+    serviceModules: '\u670d\u52a1\u4e2d\u5fc3',
+    stores: '\u95e8\u5e97\u4fe1\u606f'
+  };
+  return labels[resource] || resource || '-';
+}
+
+function buildAuditQuery(extra = {}) {
+  const params = new URLSearchParams();
+  const next = Object.assign({}, auditLogFilters, extra);
+  Object.entries(next).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') {
+      params.set(key, value);
+    }
+  });
+  return params.toString();
+}
+
+async function loadAuditLogs(extra = {}) {
+  auditLogFilters = Object.assign({}, auditLogFilters, extra);
+  const result = await api(`auditLogs?${buildAuditQuery()}`);
+  cache = result.items || [];
+  auditLogTotal = Number(result.total) || 0;
+  auditLogTotalPages = Math.max(1, Number(result.totalPages) || 1);
+  auditLogFilters.page = Number(result.page) || auditLogFilters.page || 1;
+  auditLogFilters.pageSize = Number(result.pageSize) || auditLogFilters.pageSize || 20;
+}
+
+function auditFieldValue(name) {
+  const field = list.querySelector(`[name="${name}"]`);
+  return field ? field.value.trim() : '';
+}
+
+function collectAuditFilters(page = 1) {
+  return {
+    actor: auditFieldValue('actor'),
+    role: auditFieldValue('role'),
+    entityType: auditFieldValue('entityType'),
+    action: auditFieldValue('action'),
+    startTime: auditFieldValue('startTime'),
+    endTime: auditFieldValue('endTime'),
+    keyword: auditFieldValue('keyword'),
+    page,
+    pageSize: auditFieldValue('pageSize') || auditLogFilters.pageSize
+  };
+}
+
+function formatAuditJson(value) {
+  if (value === undefined || value === null || value === '') return '\u65e0';
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch (error) {
+    return String(value);
+  }
+}
+
+function renderAuditLogs() {
+  const rows = cache;
+  const items = rows.map((row) => {
+    const resource = row.entityType || row.resourceType;
+    const createdAt = row.createdAt ? new Date(row.createdAt).toLocaleString('zh-CN', { hour12: false }) : '-';
+    const beforeJson = formatAuditJson(row.beforeData);
+    const afterJson = formatAuditJson(row.afterData);
+    return `
+      <article class="audit-card">
+        <div class="audit-main">
+          <strong>${escapeHtml(row.actor || 'system')}</strong>
+          <span>${escapeHtml(displayRoleName(row.actorRole))}</span>
+          <em>${escapeHtml(auditActionLabel(row.action))}</em>
+          <span>${escapeHtml(auditResourceLabel(resource))}</span>
+          <small>ID: ${escapeHtml(row.resourceId || '-')}</small>
+        </div>
+        <div class="audit-time">${escapeHtml(createdAt)}</div>
+        <div class="audit-summary">
+          <span>${escapeHtml(row.beforeSummary || '-')}</span>
+          <span>${escapeHtml(row.afterSummary || '-')}</span>
+        </div>
+        <details class="audit-detail">
+          <summary>\u67e5\u770b\u4fee\u6539\u524d\u540e JSON</summary>
+          <div>
+            <strong>\u4fee\u6539\u524d</strong>
+            <pre>${escapeHtml(beforeJson)}</pre>
+          </div>
+          <div>
+            <strong>\u4fee\u6539\u540e</strong>
+            <pre>${escapeHtml(afterJson)}</pre>
+          </div>
+        </details>
+      </article>
+    `;
+  }).join('') || '<p class="muted">\u5f53\u524d\u7b5b\u9009\u6761\u4ef6\u4e0b\u6682\u65e0\u64cd\u4f5c\u8bb0\u5f55\u3002</p>';
+
   list.innerHTML = `
+    <section class="audit-toolbar">
+      <label><span>\u64cd\u4f5c\u4eba</span><input name="actor" value="${escapeHtml(auditLogFilters.actor)}" /></label>
+      <label><span>\u89d2\u8272</span><select name="role">
+        <option value="">\u5168\u90e8</option>
+        <option value="boss" ${auditLogFilters.role === 'boss' ? 'selected' : ''}>\u7ba1\u7406\u7aef</option>
+        <option value="operator" ${auditLogFilters.role === 'operator' ? 'selected' : ''}>\u8fd0\u8425\u7aef</option>
+        <option value="customer" ${auditLogFilters.role === 'customer' ? 'selected' : ''}>\u5ba2\u6237</option>
+        <option value="ayi" ${auditLogFilters.role === 'ayi' ? 'selected' : ''}>\u963f\u59e8</option>
+      </select></label>
+      <label><span>\u6a21\u5757</span><input name="entityType" value="${escapeHtml(auditLogFilters.entityType)}" placeholder="ayis / demands" /></label>
+      <label><span>\u64cd\u4f5c\u7c7b\u578b</span><input name="action" value="${escapeHtml(auditLogFilters.action)}" placeholder="create / update" /></label>
+      <label><span>\u5f00\u59cb\u65f6\u95f4</span><input name="startTime" type="datetime-local" value="${escapeHtml(auditLogFilters.startTime)}" /></label>
+      <label><span>\u7ed3\u675f\u65f6\u95f4</span><input name="endTime" type="datetime-local" value="${escapeHtml(auditLogFilters.endTime)}" /></label>
+      <label class="audit-keyword"><span>\u5173\u952e\u5b57</span><input name="keyword" value="${escapeHtml(auditLogFilters.keyword)}" placeholder="\u641c\u7d22\u64cd\u4f5c\u4eba\u3001\u6a21\u5757\u3001\u6458\u8981" /></label>
+      <label><span>\u6bcf\u9875</span><select name="pageSize">
+        <option value="20" ${Number(auditLogFilters.pageSize) === 20 ? 'selected' : ''}>20</option>
+        <option value="50" ${Number(auditLogFilters.pageSize) === 50 ? 'selected' : ''}>50</option>
+      </select></label>
+      <div class="audit-actions">
+        <button type="button" data-action="audit-filter">\u67e5\u8be2</button>
+        <button class="secondary" type="button" data-action="audit-reset">\u91cd\u7f6e</button>
+        <button class="audit-export" type="button" data-action="audit-export">\u5bfc\u51fa\u64cd\u4f5c\u8bb0\u5f55</button>
+      </div>
+      <p>\u5171 ${auditLogTotal} \u6761\uff0c\u7b2c ${auditLogFilters.page} / ${auditLogTotalPages} \u9875</p>
+    </section>
+    <section class="audit-pager">
+      <button class="secondary" type="button" data-action="audit-prev" ${auditLogFilters.page <= 1 ? 'disabled' : ''}>\u4e0a\u4e00\u9875</button>
+      <span>${auditLogFilters.page} / ${auditLogTotalPages}</span>
+      <button class="secondary" type="button" data-action="audit-next" ${auditLogFilters.page >= auditLogTotalPages ? 'disabled' : ''}>\u4e0b\u4e00\u9875</button>
+    </section>
+    <div class="audit-list">${items}</div>
+  `;
+}
+
+async function exportAuditLogs() {
+  const query = buildAuditQuery(Object.assign({}, auditLogFilters, { page: '', pageSize: '', limit: 10000 }));
+  const response = await fetch(`/api/auditLogs/export?${query}`, {
+    headers: authToken ? { Authorization: `Bearer ${authToken}` } : {}
+  });
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+  const blob = await response.blob();
+  const disposition = response.headers.get('Content-Disposition') || '';
+  const match = disposition.match(/filename\*=UTF-8''([^;]+)/);
+  const filename = match ? decodeURIComponent(match[1]) : `audit-logs-${new Date().toISOString().slice(0, 10)}.csv`;
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  await loadAuditLogs();
+  renderAuditLogs();
+}
+
+function formatDateTime(value) {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleString('zh-CN', { hour12: false });
+}
+
+function todoCategoryLabels() {
+  return [
+    ['today', '今日需要跟进'],
+    ['overdue', '已逾期'],
+    ['unassigned', '暂未分配'],
+    ['completedToday', '今日已完成'],
+    ['future', '未来待跟进']
+  ];
+}
+
+function buildTodoQuery(extra = {}) {
+  const filters = Object.assign({}, todoFilters, extra);
+  const params = new URLSearchParams();
+  Object.entries(filters).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') params.set(key, value);
+  });
+  return params.toString();
+}
+
+function collectTodoFilters(page = 1) {
+  const actor = list.querySelector('[name="todoOperatorId"]');
+  const keyword = list.querySelector('[name="todoKeyword"]');
+  const pageSize = list.querySelector('[name="todoPageSize"]');
+  return {
+    operatorId: actor ? actor.value : todoFilters.operatorId,
+    keyword: keyword ? keyword.value.trim() : todoFilters.keyword,
+    pageSize: pageSize ? Number(pageSize.value) : todoFilters.pageSize,
+    page
+  };
+}
+
+async function loadTodos(extra = {}) {
+  todoFilters = Object.assign({}, todoFilters, extra);
+  const result = await api(`todos?${buildTodoQuery()}`);
+  cache = result.items || [];
+  todoStats = result.stats || {};
+  todoTotal = Number(result.total) || 0;
+  todoTotalPages = Number(result.totalPages) || 1;
+  todoFilters.page = Number(result.page) || todoFilters.page;
+  todoFilters.pageSize = Number(result.pageSize) || todoFilters.pageSize;
+  if (currentUser && currentUser.role === 'boss') {
+    try {
+      const operatorsResult = await api('demands/assignable-operators');
+      assignableOperators = operatorsResult.operators || [];
+    } catch (error) {
+      assignableOperators = [];
+    }
+  }
+}
+
+function renderTodos() {
+  const categories = todoCategoryLabels().map(([key, label]) => `
+    <button class="todo-category ${todoFilters.category === key ? 'active' : ''}" data-action="todo-category" data-category="${key}">
+      <span>${label}</span>
+      <strong>${Number(todoStats[key]) || 0}</strong>
+    </button>
+  `).join('');
+  const operatorOptions = currentUser && currentUser.role === 'boss'
+    ? `<label><span>负责人</span><select name="todoOperatorId">
+        <option value="">全部负责人</option>
+        ${assignableOperators.map((item) => `<option value="${item.id}" ${String(todoFilters.operatorId) === String(item.id) ? 'selected' : ''}>${escapeHtml(item.displayName || item.username || item.phone || `账号 ${item.id}`)}</option>`).join('')}
+      </select></label>`
+    : '';
+  const rows = cache.map((item) => `
+    <article class="todo-row ${item.isOverdue ? 'is-overdue' : ''}">
+      <div>
+        <div class="record-title">${escapeHtml(item.customerName || `需求 ${item.id}`)}</div>
+        <div class="record-line">${escapeHtml(item.maskedPhone || '-')} / ${escapeHtml(item.serviceType || '-')} / ${escapeHtml(item.status || '-')}</div>
+        <div class="record-line">负责人：${escapeHtml(item.assignedOperatorName || '暂未分配')}</div>
+        <div class="record-line">最近跟进：${escapeHtml(formatDateTime(item.lastFollowedUpAt))} / 下次跟进：${escapeHtml(formatDateTime(item.nextFollowUpAt))}</div>
+      </div>
+      <div class="record-actions">
+        <button data-action="todo-detail" data-id="${item.id}">进入客户详情</button>
+      </div>
+    </article>
+  `).join('') || '<p class="muted">当前分类暂无待办。</p>';
+
+  list.innerHTML = `
+    <section class="todo-shell">
+      <div class="todo-categories">${categories}</div>
+      <div class="todo-toolbar">
+        <label><span>关键字</span><input name="todoKeyword" value="${escapeHtml(todoFilters.keyword)}" placeholder="客户、电话、地址、服务或状态" /></label>
+        ${operatorOptions}
+        <label><span>每页</span><select name="todoPageSize">
+          <option value="20" ${Number(todoFilters.pageSize) === 20 ? 'selected' : ''}>20</option>
+          <option value="50" ${Number(todoFilters.pageSize) === 50 ? 'selected' : ''}>50</option>
+        </select></label>
+        <button data-action="todo-filter">查询</button>
+        <button class="secondary" data-action="todo-reset">重置</button>
+      </div>
+      <div class="todo-meta">共 ${todoTotal} 条，第 ${todoFilters.page} / ${todoTotalPages} 页</div>
+      <div class="todo-list">${rows}</div>
+      <div class="audit-pager">
+        <button class="secondary" data-action="todo-prev" ${todoFilters.page <= 1 ? 'disabled' : ''}>上一页</button>
+        <span>${todoFilters.page} / ${todoTotalPages}</span>
+        <button class="secondary" data-action="todo-next" ${todoFilters.page >= todoTotalPages ? 'disabled' : ''}>下一页</button>
+      </div>
+    </section>
+  `;
+}
+
+function renderCompanyProfile(profile) {
+  const companyFeature = getCompanyServiceFeatureByRoute(currentRoute);
+  list.innerHTML = `
+    ${companyFeature ? renderCompanyServiceBackLinks(companyFeature.page.route) : ''}
     <article class="record">
       <div>
         <div class="record-title">${escapeHtml(profile.companyName || '未填写公司名称')}</div>
         <div class="record-line">简称：${escapeHtml(profile.shortName || '-')}</div>
+        <div class="record-line">默认城市：${escapeHtml(profile.defaultCity || '-')}</div>
+        <div class="record-line">公司 Logo：${escapeHtml(profile.companyLogo ? '已配置' : '未配置')}</div>
         <div class="record-line">客服电话：${escapeHtml(profile.customerServicePhone || '未配置')}</div>
         <div class="record-line">地址：${escapeHtml(profile.address || '-')}</div>
         <div class="record-line">营业时间：${escapeHtml(profile.businessHours || '-')}</div>
@@ -704,6 +2024,40 @@ function renderAccountsList() {
   `;
 }
 
+function renderCategoryHome(resource) {
+  const meta = resources[resource];
+  const categories = getCategoriesForResource(resource) || [];
+  const unmatchedDemandCount = resource === 'demands'
+    ? cache.filter((item) => !demandCategoryForRecord(item)).length
+    : 0;
+  const actionText = resource === 'ayis' ? '\u67e5\u770b\u963f\u59e8' : '\u67e5\u770b\u9700\u6c42';
+  const subtitle = resource === 'ayis'
+    ? '\u8bf7\u9009\u62e9\u9700\u8981\u67e5\u770b\u7684\u963f\u59e8\u5206\u7c7b'
+    : '\u8bf7\u9009\u62e9\u9700\u8981\u67e5\u770b\u7684\u9700\u6c42\u72b6\u6001';
+  const cards = categories.map((category) => {
+    const count = cache.filter((item) => recordMatchesCategory(resource, category, item)).length;
+    return `
+      <button class="category-card" data-action="category-route" data-route="${escapeHtml(routeWithCategory(resource, category.key))}">
+        <span class="category-name">${escapeHtml(category.label)}</span>
+        <strong>${count}</strong>
+        <small>${escapeHtml(category.hint || '')}</small>
+        <em>${actionText}</em>
+      </button>
+    `;
+  }).join('');
+
+  list.innerHTML = `
+    <section class="category-home">
+      <div class="category-home-head">
+        <h3>${escapeHtml(meta.title)}</h3>
+        <p>${subtitle}</p>
+        ${unmatchedDemandCount ? `<p class="category-warning">\u6709 ${unmatchedDemandCount} \u6761\u9700\u6c42\u72b6\u6001\u672a\u5f52\u7c7b\uff0c\u8bf7\u5728\u7f16\u8f91\u65f6\u8c03\u6574\u4e3a\u6807\u51c6\u72b6\u6001\u3002</p>` : ''}
+      </div>
+      <div class="category-grid">${cards}</div>
+    </section>
+  `;
+}
+
 function renderList() {
   if (currentResource === 'accounts') {
     renderAccountsList();
@@ -711,9 +2065,62 @@ function renderList() {
   }
 
   const meta = resources[currentResource];
-  list.innerHTML = cache.map((item) => {
+  const baseRecords = getFilteredCache();
+  const canSearch = currentModuleCategory && isSearchableCategoryResource(currentResource);
+  const searchQuery = canSearch ? currentModuleSearchQuery.trim().toLowerCase() : '';
+  const records = searchQuery
+    ? baseRecords.filter((item) => recordMatchesSearch(currentResource, item, searchQuery))
+    : baseRecords;
+  const searchPlaceholder = currentResource === 'ayis'
+    ? '\u8f93\u5165\u59d3\u540d\u3001\u7535\u8bdd\u3001\u670d\u52a1\u7c7b\u578b\u6216\u72b6\u6001'
+    : '\u8f93\u5165\u5ba2\u6237\u3001\u7535\u8bdd\u3001\u5730\u5740\u3001\u670d\u52a1\u7c7b\u578b\u6216\u72b6\u6001';
+  const categoryHeader = currentModuleCategory ? `
+    <div class="category-list-header">
+      <button class="secondary" data-action="category-back">\u8fd4\u56de\u5206\u7c7b</button>
+      <div>
+        <strong>${escapeHtml(currentModuleCategory.label)}</strong>
+        <span>${searchQuery ? `${records.length} / ${baseRecords.length}` : baseRecords.length} \u6761\u8bb0\u5f55</span>
+      </div>
+    </div>
+    ${canSearch ? `
+      <label class="category-search">
+        <span>\u4fe1\u606f\u68c0\u7d22</span>
+        <input
+          type="search"
+          data-action="category-search"
+          value="${escapeHtml(currentModuleSearchQuery)}"
+          placeholder="${searchPlaceholder}"
+          autocomplete="off"
+        />
+      </label>
+    ` : ''}
+  ` : '';
+  const serviceSection = currentResource === 'serviceModules' ? getServiceModuleSectionByRoute(currentRoute) : null;
+  const serviceHeader = serviceSection ? `
+    <div class="category-list-header">
+      <button class="secondary" data-action="route-card" data-route="${escapeHtml(serviceSection.pageRoute || 'company-services')}">返回上一级</button>
+      <button class="secondary" data-action="route-card" data-route="company-services">返回公司服务</button>
+      <div>
+        <strong>${escapeHtml(serviceSection.title)}</strong>
+        <span>${records.length} 条记录</span>
+      </div>
+    </div>
+  ` : '';
+  const companyFeature = getCompanyServiceFeatureByRoute(currentRoute);
+  const companyFeatureHeader = companyFeature && !serviceSection ? `
+    <div class="category-list-header">
+      <button class="secondary" data-action="route-card" data-route="${escapeHtml(companyFeature.page.route)}">返回上一级</button>
+      <button class="secondary" data-action="route-card" data-route="company-services">返回公司服务</button>
+      <div>
+        <strong>${escapeHtml(companyFeature.title)}</strong>
+        <span>数据来源：${escapeHtml(companyFeature.source || currentResource)}</span>
+      </div>
+    </div>
+  ` : '';
+
+  const rows = records.map((item) => {
     const title = item.name || item.customerName || item.title || `记录 ${item.id}`;
-    const lines = meta.summary(item).map((text) => `<div class="record-line">${escapeHtml(text)}</div>`).join('');
+    const lines = meta.summary(item).map((line) => `<div class="record-line">${escapeHtml(line)}</div>`).join('');
     const status = item.status || (Object.prototype.hasOwnProperty.call(item, 'visible') ? (item.visible ? '显示中' : '已隐藏') : '');
     const badge = status ? `<div class="status-badge ${getStatusClass(item.status ?? item.visible)}">${escapeHtml(status)}</div>` : '';
     const needsThumb = ['ayis', 'serviceModules'].includes(currentResource);
@@ -724,8 +2131,23 @@ function renderList() {
         : '';
     const isEditing = currentRecord && currentRecord.id === item.id;
     const editLabel = currentResource === 'ayis' ? '编辑资料' : '编辑';
+    const demandDetailButton = currentResource === 'demands'
+      ? `<button data-action="demand-detail" data-id="${item.id}">详情/跟进</button>`
+      : '';
     const demandMatchButton = currentResource === 'demands'
       ? `<button data-action="match-demand" data-id="${item.id}">推荐阿姨</button>`
+      : '';
+    const ayiAvailabilityButton = currentResource === 'ayis'
+      ? `<button data-action="ayi-availability" data-id="${item.id}">档期/偏好</button>`
+      : '';
+    const availabilityLines = currentResource === 'ayis'
+      ? `
+        <div class="record-line">服务状态：${escapeHtml(displayAyiServiceStatus(item.serviceStatus || 'available'))} / ${item.recommendable ? '可推荐' : '不可推荐'}</div>
+        <div class="record-line">最早上岗：${escapeHtml(formatDateOnly(item.availableFrom) || '-')} / 档期确认：${escapeHtml(formatDateTime(item.statusConfirmedAt) || '-')} ${item.scheduleNeedsConfirmation ? '<span class="status-badge warn">档期待确认</span>' : ''}</div>
+        <div class="record-line">服务区域：${escapeHtml(Array.isArray(item.preferenceRegions) && item.preferenceRegions.length ? item.preferenceRegions.join('、') : '-')}</div>
+        <div class="record-line">服务类型：${escapeHtml(Array.isArray(item.preferenceServices) && item.preferenceServices.length ? item.preferenceServices.join('、') : (item.serviceType || '-'))}</div>
+        <div class="record-line">期望薪资：${escapeHtml(formatSalaryRange(item.minSalary, item.maxSalary))}</div>
+      `
       : '';
     return `
       <article class="record ${needsThumb ? 'has-thumb' : ''} ${isEditing ? 'is-editing' : ''}">
@@ -733,20 +2155,48 @@ function renderList() {
         <div>
           <div class="record-title">${escapeHtml(title)}</div>
           ${lines}
+          ${availabilityLines}
           ${badge}
         </div>
         <div class="record-actions">
+          ${demandDetailButton}
           ${demandMatchButton}
+          ${ayiAvailabilityButton}
           <button data-action="edit" data-id="${item.id}">${editLabel}</button>
           <button class="delete" data-action="delete" data-id="${item.id}">删除</button>
         </div>
       </article>
     `;
-  }).join('') || '<p class="muted">暂无数据，点击新增开始录入。</p>';
-}
+  }).join('') || `<p class="muted">${searchQuery ? '当前检索条件下暂无数据。' : (currentModuleCategory ? '当前分类暂无数据。' : '暂无数据，点击新增开始录入。')}</p>`;
 
+  list.innerHTML = companyFeatureHeader + serviceHeader + categoryHeader + rows;
+}
 function isCertifiedAyi(item) {
   return ['已认证', 'approved'].includes(item.status) && item.visible !== false;
+}
+
+function displayAyiServiceStatus(status) {
+  return {
+    available: '可接单',
+    working: '服务中',
+    leave: '请假中',
+    resting: '暂停接单',
+    unreachable: '暂时无法联系'
+  }[status] || '未知状态';
+}
+
+function formatDateOnly(value) {
+  if (!value) return '';
+  return String(value).slice(0, 10);
+}
+
+function formatSalaryRange(minSalary, maxSalary) {
+  const min = minSalary === null || minSalary === undefined || minSalary === '' ? '' : String(minSalary);
+  const max = maxSalary === null || maxSalary === undefined || maxSalary === '' ? '' : String(maxSalary);
+  if (min && max) return `${min}-${max}`;
+  if (min) return `${min}起`;
+  if (max) return `${max}以内`;
+  return '-';
 }
 
 async function openDemandMatchPanel(record) {
@@ -803,13 +2253,226 @@ async function openDemandMatchPanel(record) {
   `;
 }
 
+async function openDemandDetailPanel(record) {
+  currentRecord = record;
+  form.dataset.mode = 'demand-detail';
+  form.dataset.demandId = record.id;
+  editor.classList.add('is-open');
+  layout.classList.add('editor-open');
+  formTitle.textContent = `客户详情：${record.customerName || `需求 ${record.id}`}`;
+
+  const [followResult, operatorsResult] = await Promise.all([
+    api(`demands/${record.id}/follow-ups`),
+    currentUser && currentUser.role === 'boss'
+      ? api('demands/assignable-operators')
+      : Promise.resolve({ operators: [] })
+  ]);
+  const demand = followResult.demand || record;
+  const followUps = followResult.items || [];
+  const operators = operatorsResult.operators || [];
+  const assignmentForm = currentUser && currentUser.role === 'boss'
+    ? `
+      <section class="detail-block">
+        <h3>负责人</h3>
+        <div class="field">
+          <label>当前负责人</label>
+          <select name="assignedOperatorId">
+            <option value="">暂不分配</option>
+            ${operators.map((item) => `<option value="${item.id}" ${String(demand.assignedOperatorId || '') === String(item.id) ? 'selected' : ''}>${escapeHtml(item.displayName || item.username || item.phone || `账号 ${item.id}`)}</option>`).join('')}
+          </select>
+        </div>
+        <button type="button" data-action="save-assignment">保存负责人</button>
+      </section>
+    `
+    : `
+      <section class="detail-block">
+        <h3>负责人</h3>
+        <p class="muted">${escapeHtml(demand.assignedOperatorName || '暂未分配')}</p>
+      </section>
+    `;
+  const timeline = followUps.map((item) => `
+    <article class="followup-item">
+      <strong>${escapeHtml(formatDateTime(item.contactedAt))}</strong>
+      <span>${escapeHtml(item.operatorName || '-')} / ${escapeHtml(displayFollowUpMethod(item.method))}</span>
+      ${item.result ? `<div>结果：${escapeHtml(item.result)}</div>` : ''}
+      ${item.note ? `<p>${escapeHtml(item.note)}</p>` : ''}
+      <small>下次跟进：${escapeHtml(formatDateTime(item.nextFollowUpAt))}</small>
+    </article>
+  `).join('') || '<p class="muted">暂无跟进记录。</p>';
+
+  form.innerHTML = `
+    <section class="detail-block">
+      <div class="record-title">${escapeHtml(demand.customerName || '-')}</div>
+      <div class="record-line">电话：${escapeHtml(demand.maskedPhone || demand.phone || '-')}</div>
+      <div class="record-line">需求：${escapeHtml(demand.serviceType || '-')} / ${escapeHtml(demand.status || '-')}</div>
+      <div class="record-line">地址：${escapeHtml(`${demand.city || ''} ${demand.address || ''}`.trim() || '-')}</div>
+      <div class="record-line">最近跟进：${escapeHtml(formatDateTime(demand.lastFollowedUpAt))}</div>
+      <div class="record-line">下次跟进：${escapeHtml(formatDateTime(demand.nextFollowUpAt))}</div>
+    </section>
+    ${assignmentForm}
+    <section class="detail-block">
+      <h3>新增跟进</h3>
+      <div class="field">
+        <label>跟进方式</label>
+        <select name="followMethod">
+          <option value="phone">电话</option>
+          <option value="wechat">微信</option>
+          <option value="visit">到访</option>
+          <option value="other">其他</option>
+        </select>
+      </div>
+      <div class="field"><label>跟进结果</label><input name="followResult" maxlength="200" /></div>
+      <div class="field"><label>跟进时间</label><input name="contactedAt" type="datetime-local" /></div>
+      <div class="field"><label>下次跟进时间</label><input name="nextFollowUpAt" type="datetime-local" /></div>
+      <div class="field"><label>备注</label><textarea name="followNote" maxlength="2000"></textarea></div>
+      <button type="button" data-action="save-follow-up">保存跟进</button>
+    </section>
+    <section class="detail-block">
+      <h3>跟进历史</h3>
+      <div class="followup-timeline">${timeline}</div>
+    </section>
+    <div class="form-actions">
+      <button type="button" class="secondary" id="clearBtn">关闭</button>
+    </div>
+  `;
+}
+
+async function openAyiAvailabilityPanel(record) {
+  currentRecord = record;
+  form.dataset.mode = 'ayi-availability';
+  form.dataset.ayiId = record.id;
+  editor.classList.add('is-open');
+  layout.classList.add('editor-open');
+  formTitle.textContent = `阿姨档期/偏好：${record.name || `阿姨 ${record.id}`}`;
+
+  const [profileResult, serviceModulesResult, historyResult] = await Promise.all([
+    api(`ayis/${record.id}/availability`),
+    api('serviceModules'),
+    api(`ayis/${record.id}/status-history`)
+  ]);
+  const profile = profileResult.profile || {};
+  const availability = profile.availability || {};
+  const preferences = profile.preferences || {};
+  const selectedServiceIds = new Set((profile.serviceTypes || []).map((item) => Number(item.id)));
+  const services = (serviceModulesResult || []).filter((item) => item.moduleType === 'service' && item.visible !== false);
+  const serviceOptions = services.map((item) => `
+    <label class="check-line">
+      <input type="checkbox" name="serviceTypeIds" value="${item.id}" ${selectedServiceIds.has(Number(item.id)) ? 'checked' : ''} />
+      <span>${escapeHtml(item.title || `服务 ${item.id}`)}</span>
+    </label>
+  `).join('') || '<p class="muted">暂无后台服务项目。</p>';
+  const weekdaySet = new Set((availability.serviceWeekdays || []).map((item) => Number(item)));
+  const slotSet = new Set(availability.serviceTimeSlots || []);
+  const historyRows = (historyResult.history || []).map((item) => `
+    <div class="followup-item">
+      <strong>${escapeHtml(formatDateTime(item.createdAt) || '-')} / ${escapeHtml(item.changeType || '-')}</strong>
+      <div class="record-line">操作人：${escapeHtml(item.changedByName || item.changedBy || '-')}</div>
+      <pre>${escapeHtml(JSON.stringify(item.afterData || {}, null, 2))}</pre>
+    </div>
+  `).join('') || '<p class="muted">暂无状态修改历史。</p>';
+
+  form.innerHTML = `
+    <section class="detail-block">
+      <h3>服务状态与档期</h3>
+      <div class="field">
+        <label>当前服务状态</label>
+        <select name="serviceStatus">
+          ${['available', 'working', 'leave', 'resting', 'unreachable'].map((status) => (
+            `<option value="${status}" ${availability.serviceStatus === status ? 'selected' : ''}>${displayAyiServiceStatus(status)}</option>`
+          )).join('')}
+        </select>
+      </div>
+      <div class="field-grid">
+        <div class="field"><label>最早可上岗日期</label><input type="date" name="availableFrom" value="${escapeHtml(formatDateOnly(availability.availableFrom))}" /></div>
+        <div class="field"><label>可服务结束日期</label><input type="date" name="availableTo" value="${escapeHtml(formatDateOnly(availability.availableTo))}" /></div>
+      </div>
+      <div class="field"><label><input type="checkbox" name="longTermAvailable" value="true" ${availability.longTermAvailable !== false ? 'checked' : ''} /> 长期可服务</label></div>
+      <div class="field">
+        <label>可服务星期</label>
+        <div class="inline-checks">
+          ${[1, 2, 3, 4, 5, 6, 7].map((day) => `<label><input type="checkbox" name="serviceWeekdays" value="${day}" ${weekdaySet.has(day) ? 'checked' : ''} /> 周${day === 7 ? '日' : day}</label>`).join('')}
+        </div>
+      </div>
+      <div class="field">
+        <label>可服务时间段</label>
+        <div class="inline-checks">
+          ${[
+            ['day', '白班'],
+            ['night', '夜班'],
+            ['live_in', '住家'],
+            ['temporary', '临时'],
+            ['long_term', '长期']
+          ].map(([value, label]) => `<label><input type="checkbox" name="serviceTimeSlots" value="${value}" ${slotSet.has(value) ? 'checked' : ''} /> ${label}</label>`).join('')}
+        </div>
+      </div>
+      <div class="field"><label>档期备注</label><textarea name="scheduleNote">${escapeHtml(availability.scheduleNote || '')}</textarea></div>
+    </section>
+
+    <section class="detail-block">
+      <h3>服务范围与接单偏好</h3>
+      <div class="field"><label>可服务区域，逐项用逗号分隔</label><input name="regions" value="${escapeHtml((profile.regions || []).join(', '))}" /></div>
+      <div class="field"><label>可接受服务类型</label><div class="check-grid">${serviceOptions}</div></div>
+      <div class="inline-checks">
+        <label><input type="checkbox" name="acceptLiveIn" value="true" ${preferences.acceptLiveIn ? 'checked' : ''} /> 接受住家</label>
+        <label><input type="checkbox" name="acceptDayShift" value="true" ${preferences.acceptDayShift !== false ? 'checked' : ''} /> 接受白班</label>
+        <label><input type="checkbox" name="acceptNightShift" value="true" ${preferences.acceptNightShift ? 'checked' : ''} /> 接受夜班</label>
+        <label><input type="checkbox" name="acceptLongTerm" value="true" ${preferences.acceptLongTerm !== false ? 'checked' : ''} /> 接受长期订单</label>
+        <label><input type="checkbox" name="acceptTemporary" value="true" ${preferences.acceptTemporary !== false ? 'checked' : ''} /> 接受临时订单</label>
+      </div>
+      <div class="field-grid">
+        <div class="field"><label>期望最低薪资</label><input type="number" min="0" name="minSalary" value="${escapeHtml(preferences.minSalary ?? '')}" /></div>
+        <div class="field"><label>期望最高薪资</label><input type="number" min="0" name="maxSalary" value="${escapeHtml(preferences.maxSalary ?? '')}" /></div>
+      </div>
+      <div class="field"><label>最快到岗日期</label><input type="date" name="earliestStartDate" value="${escapeHtml(formatDateOnly(preferences.earliestStartDate))}" /></div>
+      <div class="field"><label>补充说明</label><textarea name="note">${escapeHtml(preferences.note || '')}</textarea></div>
+    </section>
+
+    <div class="form-actions">
+      <button type="submit">保存档期和偏好</button>
+      <button type="button" class="secondary" id="clearBtn">取消</button>
+    </div>
+
+    <section class="detail-block">
+      <h3>状态修改历史</h3>
+      <div class="followup-timeline">${historyRows}</div>
+    </section>
+  `;
+}
+
+function displayFollowUpMethod(method) {
+  const map = {
+    phone: '电话',
+    wechat: '微信',
+    visit: '到访',
+    other: '其他'
+  };
+  return map[method] || method || '-';
+}
+
+async function refreshCurrentDemandViews(demandId) {
+  if (currentRoute === 'todos') {
+    await loadTodos();
+    renderTodos();
+    const latest = cache.find((item) => Number(item.id) === Number(demandId)) || currentRecord;
+    await openDemandDetailPanel(latest);
+    return;
+  }
+  if (currentResource === 'demands') {
+    await loadResource('demands');
+    const latest = cache.find((item) => Number(item.id) === Number(demandId)) || currentRecord;
+    await openDemandDetailPanel(latest);
+  }
+}
+
 function renderForm(record = null) {
   currentRecord = record;
   pendingImages = {};
   const meta = resources[currentResource];
+  const serviceSection = currentResource === 'serviceModules' ? getServiceModuleSectionByRoute(currentRoute) : null;
   const recordName = record ? (record.name || record.customerName || record.title || `记录 ${record.id}`) : '';
-  formTitle.textContent = record ? `编辑${meta.title}：${recordName}` : `新增${meta.title}`;
-  const fields = meta.fields.map(([key, label, type = 'text', options = []]) => {
+  const title = serviceSection ? serviceSection.title : meta.title;
+  formTitle.textContent = record ? `编辑${title}：${recordName}` : `新增${title}`;
+  const fields = getCurrentFields().map(([key, label, type = 'text', options = []]) => {
     const raw = record ? (key === 'role' ? displayRoleName(record[key]) : record[key]) : '';
     const value = Array.isArray(raw) ? raw.join(', ') : raw || '';
     if (type === 'textarea') {
@@ -922,6 +2585,89 @@ list.addEventListener('click', async (event) => {
     setRoute(button.dataset.route || 'home');
     return;
   }
+  if (button.dataset.action === 'category-route') {
+    setRoute(button.dataset.route || currentRoute || 'home');
+    return;
+  }
+  if (button.dataset.action === 'category-back') {
+    setRoute(currentRoute || 'home');
+    return;
+  }
+  if (button.dataset.action === 'audit-export') {
+    try {
+      await exportAuditLogs();
+    } catch (error) {
+      alert(`\u5bfc\u51fa\u5931\u8d25\uff1a${error.message}`);
+    }
+    return;
+  }
+  if (button.dataset.action === 'audit-filter') {
+    await loadAuditLogs(collectAuditFilters(1));
+    renderAuditLogs();
+    return;
+  }
+  if (button.dataset.action === 'audit-reset') {
+    auditLogFilters = {
+      actor: '',
+      role: '',
+      entityType: '',
+      action: '',
+      startTime: '',
+      endTime: '',
+      keyword: '',
+      page: 1,
+      pageSize: 20
+    };
+    await loadAuditLogs();
+    renderAuditLogs();
+    return;
+  }
+  if (button.dataset.action === 'audit-prev') {
+    await loadAuditLogs({ page: Math.max(1, Number(auditLogFilters.page) - 1) });
+    renderAuditLogs();
+    return;
+  }
+  if (button.dataset.action === 'audit-next') {
+    await loadAuditLogs({ page: Math.min(auditLogTotalPages, Number(auditLogFilters.page) + 1) });
+    renderAuditLogs();
+    return;
+  }
+  if (button.dataset.action === 'todo-category') {
+    await loadTodos({ category: button.dataset.category || 'today', page: 1 });
+    renderTodos();
+    return;
+  }
+  if (button.dataset.action === 'todo-filter') {
+    await loadTodos(collectTodoFilters(1));
+    renderTodos();
+    return;
+  }
+  if (button.dataset.action === 'todo-reset') {
+    todoFilters = { category: todoFilters.category || 'today', keyword: '', operatorId: '', page: 1, pageSize: 20 };
+    await loadTodos();
+    renderTodos();
+    return;
+  }
+  if (button.dataset.action === 'todo-prev') {
+    await loadTodos({ page: Math.max(1, Number(todoFilters.page) - 1) });
+    renderTodos();
+    return;
+  }
+  if (button.dataset.action === 'todo-next') {
+    await loadTodos({ page: Math.min(todoTotalPages, Number(todoFilters.page) + 1) });
+    renderTodos();
+    return;
+  }
+  if (button.dataset.action === 'todo-detail') {
+    const id = Number(button.dataset.id);
+    const record = cache.find((item) => item.id === id) || { id };
+    try {
+      await openDemandDetailPanel(record);
+    } catch (error) {
+      alert(error.message || '加载客户详情失败');
+    }
+    return;
+  }
   if (button.dataset.action === 'toggle-account-group') {
     expandedAccountRole = expandedAccountRole === button.dataset.role ? null : button.dataset.role;
     renderAccountsList();
@@ -951,6 +2697,32 @@ list.addEventListener('click', async (event) => {
     }
     return;
   }
+  if (button.dataset.action === 'demand-detail') {
+    const record = cache.find((item) => item.id === id);
+    if (!record) {
+      alert('没有找到这条需求，请刷新后再试。');
+      return;
+    }
+    try {
+      await openDemandDetailPanel(record);
+    } catch (error) {
+      alert(error.message || '加载客户详情失败');
+    }
+    return;
+  }
+  if (button.dataset.action === 'ayi-availability') {
+    const record = cache.find((item) => item.id === id);
+    if (!record) {
+      alert('没有找到这位阿姨，请刷新后再试。');
+      return;
+    }
+    try {
+      await openAyiAvailabilityPanel(record);
+    } catch (error) {
+      alert(error.message || '加载阿姨档期失败');
+    }
+    return;
+  }
   if (button.dataset.action === 'delete' && confirm('确定删除这条数据？')) {
     const target = cache.find((item) => item.id === id);
     if (currentResource === 'accounts') {
@@ -968,20 +2740,70 @@ list.addEventListener('click', async (event) => {
     }
 
     try {
-      await api(`${currentResource}/${id}`, { method: 'DELETE' });
-      await loadResource();
+      const deletePath = currentResource === 'serviceModules' ? getServiceModuleApiPath(id) : `${currentResource}/${id}`;
+      await api(deletePath, { method: 'DELETE' });
+      await loadResource(currentResource, { route: currentRoute });
     } catch (error) {
       alert(error.message || '删除失败');
     }
   }
 });
 
-form.addEventListener('click', (event) => {
+form.addEventListener('click', async (event) => {
   if (event.target.id === 'company-profile-reset') {
     renderCompanyProfileForm(currentRecord || {});
     return;
   }
   if (event.target.id === 'clearBtn') closeEditor();
+  const assignmentButton = event.target.closest('[data-action="save-assignment"]');
+  if (assignmentButton) {
+    event.preventDefault();
+    if (!currentRecord) return;
+    assignmentButton.disabled = true;
+    assignmentButton.textContent = '保存中...';
+    try {
+      const operatorSelect = form.querySelector('[name="assignedOperatorId"]');
+      await api(`demands/${currentRecord.id}/assignment`, {
+        method: 'PUT',
+        body: JSON.stringify({ operatorId: operatorSelect && operatorSelect.value ? Number(operatorSelect.value) : null })
+      });
+      alert('负责人已更新。');
+      await refreshCurrentDemandViews(currentRecord.id);
+    } catch (error) {
+      alert(error.message || '保存负责人失败');
+      assignmentButton.disabled = false;
+      assignmentButton.textContent = '保存负责人';
+    }
+    return;
+  }
+
+  const followButton = event.target.closest('[data-action="save-follow-up"]');
+  if (followButton) {
+    event.preventDefault();
+    if (!currentRecord) return;
+    followButton.disabled = true;
+    followButton.textContent = '保存中...';
+    try {
+      await api(`demands/${currentRecord.id}/follow-ups`, {
+        method: 'POST',
+        body: JSON.stringify({
+          method: form.querySelector('[name="followMethod"]').value,
+          result: form.querySelector('[name="followResult"]').value,
+          contactedAt: form.querySelector('[name="contactedAt"]').value,
+          nextFollowUpAt: form.querySelector('[name="nextFollowUpAt"]').value,
+          note: form.querySelector('[name="followNote"]').value
+        })
+      });
+      alert('跟进记录已保存。');
+      await refreshCurrentDemandViews(currentRecord.id);
+    } catch (error) {
+      alert(error.message || '保存跟进失败');
+      followButton.disabled = false;
+      followButton.textContent = '保存跟进';
+    }
+    return;
+  }
+
   const expireButton = event.target.closest('[data-action="expire-match"]');
   if (expireButton) {
     event.preventDefault();
@@ -989,6 +2811,32 @@ form.addEventListener('click', (event) => {
     api(`demandMatches/${expireButton.dataset.id}/expire`, { method: 'POST' })
       .then(() => openDemandMatchPanel(currentRecord))
       .catch((error) => alert(error.message || '标记失效失败'));
+  }
+});
+
+list.addEventListener('input', (event) => {
+  const auditInput = event.target.closest('input[data-action="audit-search"]');
+  if (auditInput) {
+    auditLogSearchQuery = auditInput.value;
+    renderAuditLogs();
+    const nextInput = list.querySelector('input[data-action="audit-search"]');
+    if (nextInput) {
+      nextInput.focus();
+      const position = nextInput.value.length;
+      nextInput.setSelectionRange(position, position);
+    }
+    return;
+  }
+
+  const input = event.target.closest('input[data-action="category-search"]');
+  if (!input) return;
+  currentModuleSearchQuery = input.value;
+  renderList();
+  const nextInput = list.querySelector('input[data-action="category-search"]');
+  if (nextInput) {
+    nextInput.focus();
+    const position = nextInput.value.length;
+    nextInput.setSelectionRange(position, position);
   }
 });
 
@@ -1040,6 +2888,53 @@ form.addEventListener('submit', async (event) => {
     }
     return;
   }
+  if (form.dataset.mode === 'customer-home-hero') {
+    const formData = new FormData(form);
+    const submitButton = form.querySelector('button[type="submit"]');
+    if (submitButton) {
+      submitButton.disabled = true;
+      submitButton.textContent = '保存中...';
+    }
+    const payload = {
+      moduleType: 'highlight',
+      title: formData.get('mainTitle'),
+      summary: formData.get('subtitle'),
+      iconText: '',
+      theme: '',
+      targetType: 'customer_home_hero',
+      targetValue: JSON.stringify({
+        primaryButtonText: formData.get('primaryButtonText'),
+        primaryButtonTarget: formData.get('primaryButtonTarget'),
+        secondaryButtonText: formData.get('secondaryButtonText'),
+        secondaryButtonTarget: formData.get('secondaryButtonTarget')
+      }),
+      sort: 0,
+      visible: true
+    };
+    try {
+      if (currentRecord && currentRecord.id) {
+        await api(`serviceModules/${currentRecord.id}?moduleType=highlight`, {
+          method: 'PUT',
+          body: JSON.stringify(payload)
+        });
+      } else {
+        await api('serviceModules?moduleType=highlight', {
+          method: 'POST',
+          body: JSON.stringify(payload)
+        });
+      }
+      alert('顶部主视觉已保存。');
+      const feature = getCompanyServiceFeatureByRoute(currentRoute);
+      await renderCustomerHomeHero(feature);
+    } catch (error) {
+      alert(error.message || '保存顶部主视觉失败');
+      if (submitButton) {
+        submitButton.disabled = false;
+        submitButton.textContent = '保存顶部主视觉';
+      }
+    }
+    return;
+  }
   if (form.dataset.mode === 'demand-match') {
     const formData = new FormData(form);
     try {
@@ -1060,29 +2955,99 @@ form.addEventListener('submit', async (event) => {
     }
     return;
   }
+  if (form.dataset.mode === 'ayi-availability') {
+    const formData = new FormData(form);
+    const submitButton = form.querySelector('button[type="submit"]');
+    if (submitButton) {
+      submitButton.disabled = true;
+      submitButton.textContent = '保存中...';
+    }
+    const ayiId = form.dataset.ayiId;
+    try {
+      await api(`ayis/${ayiId}/availability`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          serviceStatus: formData.get('serviceStatus'),
+          availableFrom: formData.get('availableFrom'),
+          availableTo: formData.get('availableTo'),
+          longTermAvailable: formData.has('longTermAvailable'),
+          serviceWeekdays: formData.getAll('serviceWeekdays').map(Number),
+          serviceTimeSlots: formData.getAll('serviceTimeSlots'),
+          scheduleNote: formData.get('scheduleNote')
+        })
+      });
+      await api(`ayis/${ayiId}/preferences`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          regions: String(formData.get('regions') || '').split(',').map((item) => item.trim()).filter(Boolean),
+          serviceTypeIds: formData.getAll('serviceTypeIds').map(Number),
+          acceptLiveIn: formData.has('acceptLiveIn'),
+          acceptDayShift: formData.has('acceptDayShift'),
+          acceptNightShift: formData.has('acceptNightShift'),
+          acceptLongTerm: formData.has('acceptLongTerm'),
+          acceptTemporary: formData.has('acceptTemporary'),
+          minSalary: formData.get('minSalary'),
+          maxSalary: formData.get('maxSalary'),
+          earliestStartDate: formData.get('earliestStartDate'),
+          note: formData.get('note')
+        })
+      });
+      alert('阿姨档期和接单偏好已保存。');
+      await loadResource('ayis');
+      const record = cache.find((item) => Number(item.id) === Number(ayiId)) || currentRecord;
+      if (record) await openAyiAvailabilityPanel(record);
+    } catch (error) {
+      alert(error.message || '保存阿姨档期失败');
+      if (submitButton) {
+        submitButton.disabled = false;
+        submitButton.textContent = '保存档期和偏好';
+      }
+    }
+    return;
+  }
   const formData = new FormData(form);
   const payload = {};
-  resources[currentResource].fields.forEach(([key]) => {
+  getCurrentFields().forEach(([key]) => {
     payload[key] = normalizeValue(key, pendingImages[key] || formData.get(key));
   });
   if (currentResource === 'accounts' && payload.role) {
     payload.role = normalizeRoleForSave(payload.role);
   }
+  const activeServiceSection = currentResource === 'serviceModules' ? getServiceModuleSectionByRoute(currentRoute) : null;
+  if (activeServiceSection) {
+    payload.moduleType = activeServiceSection.moduleType;
+    if (activeServiceSection.filterTargetType) {
+      payload.targetType = activeServiceSection.filterTargetType;
+    }
+    if (activeServiceSection.filterTargetValue) {
+      payload.targetValue = activeServiceSection.filterTargetValue;
+    }
+  }
 
   if (currentRecord) {
-    await api(`${currentResource}/${currentRecord.id}`, {
+    const updatePath = currentResource === 'serviceModules' ? getServiceModuleApiPath(currentRecord.id) : `${currentResource}/${currentRecord.id}`;
+    await api(updatePath, {
       method: 'PUT',
       body: JSON.stringify(payload)
     });
     alert('已保存修改。');
   } else {
-    await api(currentResource, {
+    const createPath = currentResource === 'serviceModules' ? getServiceModuleApiPath() : currentResource;
+    await api(createPath, {
       method: 'POST',
       body: JSON.stringify(payload)
     });
     alert('已保存新增。');
   }
-  await loadResource();
+  if (currentResource === 'serviceModules') {
+    const section = getServiceModuleSectionByRoute(currentRoute);
+    if (section) {
+      if (currentRecord) await renderServiceModuleItemPage(section, currentRecord.id);
+      else await renderServiceModuleSectionHome(section);
+      return;
+    }
+  }
+  await loadResource(currentResource, { route: currentRoute });
 });
 
 async function boot() {

@@ -1,55 +1,69 @@
 <view class="page about-page">
-  <view class="brand card">
-    <view class="brand-logo">阳光</view>
-    <view>
-      <view class="brand-name">{{companyProfile.companyName || '北京阳光北亚家政'}}</view>
-      <view class="muted">{{companyProfile.introduction || '家庭服务匹配平台，覆盖一般家政、母婴服务、育婴服务、养老护理、保洁助餐等。'}}</view>
+  <view wx:if="{{introConfig.visible !== false}}" class="brand card">
+    <image
+      wx:if="{{displayLogo}}"
+      class="brand-logo brand-logo-image"
+      src="{{displayLogo}}"
+      mode="aspectFit"
+    />
+    <view wx:else class="brand-logo">{{companyProfile.shortName || '阳光'}}</view>
+    <view class="brand-content">
+      <view class="brand-kicker">{{introConfig.pageTitle}}</view>
+      <view class="brand-name">{{companyProfile.companyName}}</view>
+      <view class="muted">{{companyProfile.companyDescription || companyProfile.introduction}}</view>
     </view>
   </view>
 
   <view class="section card block">
     <view class="block-title">公司信息</view>
-    <view class="info-line">服务区域：北京东城、朝阳、海淀、丰台、通州等</view>
+    <view class="info-line">服务城市：{{companyProfile.defaultCity || '暂未配置'}}</view>
     <view class="info-line">联系地址：{{companyProfile.address || '暂未配置'}}</view>
     <view class="info-line">营业时间：{{companyProfile.businessHours || '暂未配置'}}</view>
     <view class="info-line">客服电话：{{companyProfile.customerServicePhone || '暂未配置'}}</view>
   </view>
 
-  <view class="section card block">
+  <view wx:if="{{services.length}}" class="section card block">
     <view class="block-title">服务范围</view>
     <view>
-      <text wx:for="{{services}}" wx:key="*this" class="tag">{{item}}</text>
+      <text wx:for="{{services}}" wx:key="id" class="tag">{{item.title}}</text>
     </view>
   </view>
 
-  <view class="section card block">
+  <view wx:if="{{stores.length}}" class="section card block">
     <view class="block-title">门店/服务点</view>
-    <view wx:for="{{stores}}" wx:key="name" class="store">
+    <view wx:for="{{stores}}" wx:key="id" class="store">
       <view class="store-name">{{item.name}}</view>
       <view class="muted">覆盖：{{item.area}}</view>
       <view class="muted">{{item.address}}</view>
+      <view wx:if="{{item.phone}}" class="muted">电话：{{item.phone}}</view>
     </view>
   </view>
 
-  <view class="section card block">
+  <view wx:if="{{process.length}}" class="section card block">
     <view class="block-title">服务流程</view>
-    <view wx:for="{{process}}" wx:key="*this" class="line">
-      <view class="dot"></view>
-      <text>{{item}}</text>
+    <view wx:for="{{process}}" wx:key="id" class="line">
+      <view class="dot">{{item.step}}</view>
+      <view class="line-content">
+        <view class="line-title">{{item.title}}</view>
+        <view wx:if="{{item.description}}" class="muted">{{item.description}}</view>
+      </view>
     </view>
   </view>
 
-  <view class="section card block">
+  <view wx:if="{{guarantees.length}}" class="section card block">
     <view class="block-title">服务保障</view>
-    <view wx:for="{{guarantees}}" wx:key="*this" class="line">
+    <view wx:for="{{guarantees}}" wx:key="id" class="line">
       <view class="dot"></view>
-      <text>{{item}}</text>
+      <view class="line-content">
+        <view class="line-title">{{item.title}}</view>
+        <view wx:if="{{item.description}}" class="muted">{{item.description}}</view>
+      </view>
     </view>
   </view>
 
-  <view class="section card block">
-    <view class="block-title">客服咨询</view>
-    <view class="muted">如果不确定适合哪类阿姨，可以先电话沟通需求。</view>
-    <button class="primary-button call-button" bindtap="callService">联系客服</button>
+  <view wx:if="{{customerServiceConfig.visible !== false}}" class="section card block">
+    <view class="block-title">{{customerServiceConfig.title}}</view>
+    <view class="muted">{{customerServiceConfig.description}}</view>
+    <button class="primary-button call-button" bindtap="callService">{{customerServiceConfig.buttonText}}</button>
   </view>
 </view>

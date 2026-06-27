@@ -17,6 +17,8 @@ function rowToProfile(row) {
     id: row.id,
     companyName: row.company_name || '',
     shortName: row.short_name || '',
+    companyLogo: row.company_logo || '',
+    defaultCity: row.default_city || '',
     introduction: row.introduction || '',
     customerServicePhone: row.customer_service_phone || '',
     address: row.address || '',
@@ -30,6 +32,8 @@ function publicProfile(profile) {
   return {
     companyName: profile.companyName || '',
     shortName: profile.shortName || '',
+    companyLogo: profile.companyLogo || '',
+    defaultCity: profile.defaultCity || '',
     introduction: profile.introduction || '',
     customerServicePhone: profile.customerServicePhone || '',
     address: profile.address || '',
@@ -47,11 +51,13 @@ async function updateProfile(payload, actor) {
     const before = await getProfile(client);
     const result = await client.query(
       `INSERT INTO company_profile (
-        id, company_name, short_name, introduction, customer_service_phone, address, business_hours
-      ) VALUES (1, $1, $2, $3, $4, $5, $6)
+        id, company_name, short_name, company_logo, default_city, introduction, customer_service_phone, address, business_hours
+      ) VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8)
       ON CONFLICT (id) DO UPDATE SET
         company_name = EXCLUDED.company_name,
         short_name = EXCLUDED.short_name,
+        company_logo = EXCLUDED.company_logo,
+        default_city = EXCLUDED.default_city,
         introduction = EXCLUDED.introduction,
         customer_service_phone = EXCLUDED.customer_service_phone,
         address = EXCLUDED.address,
@@ -60,6 +66,8 @@ async function updateProfile(payload, actor) {
       [
         payload.companyName || '',
         payload.shortName || '',
+        payload.companyLogo || '',
+        payload.defaultCity || '',
         payload.introduction || '',
         payload.customerServicePhone || '',
         payload.address || '',

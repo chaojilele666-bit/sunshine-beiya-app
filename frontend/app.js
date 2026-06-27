@@ -8,6 +8,8 @@ const imageDisplayCache = {};
 const DEFAULT_COMPANY_PROFILE = {
   companyName: '',
   shortName: '',
+  companyLogo: '',
+  defaultCity: '',
   introduction: '',
   customerServicePhone: '',
   address: '',
@@ -198,6 +200,8 @@ function normalizeCompanyProfile(profile) {
   return {
     companyName: source.companyName || source.company_name || '',
     shortName: source.shortName || source.short_name || '',
+    companyLogo: source.companyLogo || source.company_logo || '',
+    defaultCity: source.defaultCity || source.default_city || '',
     introduction: source.introduction || '',
     customerServicePhone: source.customerServicePhone || source.customer_service_phone || '',
     address: source.address || '',

@@ -1,6 +1,7 @@
 <view class="page mine-page">
-  <view class="user card">
-    <view class="user-avatar">{{avatarText}}</view>
+  <view wx:if="{{topVisible !== false}}" class="user card">
+    <image wx:if="{{displayLogo}}" class="user-avatar user-avatar-image" src="{{displayLogo}}" mode="aspectFit" />
+    <view wx:else class="user-avatar {{isAyi ? 'ayi-avatar' : ''}}">{{avatarText}}</view>
     <view class="user-main">
       <view class="user-name">{{pageTitle}}</view>
       <view class="muted">当前身份：{{roleText}}</view>
@@ -8,96 +9,81 @@
     </view>
   </view>
 
-  <view wx:if="{{isAyi}}" class="profile-alert card">
-    <view>
-      <view class="alert-title">资料状态</view>
-      <view class="muted">资料越完整，越容易获得面试机会。</view>
-    </view>
-    <view class="status-value">{{profileStatus}}</view>
-  </view>
-
-  <view class="section tools-section">
+  <view wx:if="{{noRole}}" class="section tools-section">
     <view class="section-title">常用功能</view>
     <view class="tool-list">
-      <view wx:if="{{noRole}}" class="tool card" bindtap="switchRole">
+      <view class="tool card" bindtap="switchRole">
         <view class="tool-icon purple">选</view>
         <view class="tool-text">
           <view class="tool-title">选择身份</view>
           <view class="muted">客户 / 阿姨</view>
         </view>
       </view>
+    </view>
+  </view>
 
-      <view wx:if="{{isCustomer}}" class="tool card" bindtap="goDemand">
-      <view class="tool-icon pink">需</view>
+  <view wx:if="{{isCustomer}}" class="section tools-section">
+    <view class="section-title">常用功能</view>
+    <view class="tool-list">
+      <view
+        wx:for="{{customerShortcuts}}"
+        wx:key="id"
+        class="tool card"
+        bindtap="handleShortcut"
+        data-item="{{item}}"
+      >
+        <image wx:if="{{item.displayIcon}}" class="tool-image" src="{{item.displayIcon}}" mode="aspectFit" />
+        <view wx:else class="tool-icon {{item.iconClass}}">{{item.iconText}}</view>
         <view class="tool-text">
-          <view class="tool-title">发布需求</view>
-          <view class="muted">填写家庭服务需求</view>
-        </view>
-      </view>
-      <view wx:if="{{isCustomer}}" class="tool card" bindtap="goList">
-      <view class="tool-icon green">找</view>
-        <view class="tool-text">
-          <view class="tool-title">找阿姨</view>
-          <view class="muted">查看可预约阿姨</view>
-        </view>
-      </view>
-
-      <view wx:if="{{isAyi}}" class="tool card" bindtap="goProfile">
-      <view class="tool-icon pink">简</view>
-        <view class="tool-text">
-          <view class="tool-title">我的资料</view>
-          <view class="muted">经验、薪资、服务类型</view>
-        </view>
-      </view>
-      <view wx:if="{{isAyi}}" class="tool card" bindtap="goCerts">
-      <view class="tool-icon green">证</view>
-        <view class="tool-text">
-          <view class="tool-title">我的证件</view>
-          <view class="muted">身份证、健康证、技能证书</view>
-        </view>
-      </view>
-      <view wx:if="{{isAyi}}" class="tool card" bindtap="goHall">
-      <view class="tool-icon blue">单</view>
-        <view class="tool-text">
-          <view class="tool-title">找工作</view>
-          <view class="muted">查看客户需求</view>
-        </view>
-      </view>
-      <view wx:if="{{isAyi}}" class="tool card" bindtap="goApplications">
-      <view class="tool-icon yellow">接</view>
-        <view class="tool-text">
-          <view class="tool-title">我的接单</view>
-          <view class="muted">查看申请记录</view>
+          <view class="tool-title">{{item.title}}</view>
+          <view class="muted">{{item.description}}</view>
         </view>
       </view>
     </view>
   </view>
 
-  <view class="assist-list card">
-    <view class="assist-row" bindtap="callService">
-      <view>
-        <view class="assist-title">联系客服</view>
-        <view class="muted">电话沟通服务问题</view>
-      </view>
-      <view class="assist-arrow">›</view>
+  <view wx:if="{{isAyi && ayiReviewConfig.visible !== false}}" class="profile-alert card">
+    <view>
+      <view class="alert-title">{{ayiReviewConfig.title}}</view>
+      <view class="muted">{{reviewMessage}}</view>
+      <button class="ghost-button review-button" bindtap="goProfile">{{ayiReviewConfig.buttonText}}</button>
     </view>
-    <view class="assist-row" bindtap="switchRole">
-      <view>
-        <view class="assist-title">切换身份</view>
-        <view class="muted">客户 / 阿姨身份切换</view>
+    <view class="status-value">{{profileStatus}}</view>
+  </view>
+
+  <view wx:if="{{isAyi}}" class="section tools-section">
+    <view class="section-title">常用功能</view>
+    <view class="tool-list">
+      <view
+        wx:for="{{ayiShortcuts}}"
+        wx:key="id"
+        class="tool card"
+        bindtap="handleShortcut"
+        data-item="{{item}}"
+      >
+        <image wx:if="{{item.displayIcon}}" class="tool-image" src="{{item.displayIcon}}" mode="aspectFit" />
+        <view wx:else class="tool-icon {{item.iconClass}}">{{item.iconText}}</view>
+        <view class="tool-text">
+          <view class="tool-title">{{item.title}}</view>
+          <view class="muted">{{item.description}}</view>
+        </view>
       </view>
-      <view class="assist-arrow">›</view>
     </view>
   </view>
 
-  <view wx:if="{{isCustomer}}" class="banner-card">服务顾问会根据地址、预算和家庭情况推荐合适阿姨</view>
+  <view wx:if="{{isCustomer && customerTip.visible !== false}}" class="banner-card">{{customerTip.text}}</view>
 
-  <view wx:if="{{isCustomer}}" class="section">
-    <view class="section-title">我的需求</view>
+  <view wx:if="{{isAyi && ayiTip.visible !== false}}" class="banner-card">
+    <view>{{ayiTip.text}}</view>
+    <button class="ghost-button banner-button" bindtap="handleShortcut" data-item="{{ayiTip}}">{{ayiTip.buttonText}}</button>
+  </view>
+
+  <view wx:if="{{isCustomer && customerDemandSection.visible !== false}}" class="section">
+    <view class="section-title">{{customerDemandSection.title}}</view>
     <view wx:if="{{noDemands}}" class="empty card">
-      <view class="empty-title">还没有发布需求</view>
-      <view class="muted">填写家庭情况后，顾问会帮你推荐合适阿姨。</view>
-      <button class="primary-button empty-button" bindtap="goDemand">发布需求</button>
+      <view class="empty-title">{{customerDemandSection.emptyTitle}}</view>
+      <view class="muted">{{customerDemandSection.emptyDescription}}</view>
+      <button class="primary-button empty-button" bindtap="goDemand">{{customerDemandSection.buttonText}}</button>
     </view>
     <view wx:for="{{demands}}" wx:key="id" class="appointment card" bindtap="goDemandDetail" data-id="{{item.id}}">
       <view class="appointment-top">
@@ -112,12 +98,12 @@
     </view>
   </view>
 
-  <view wx:if="{{isCustomer}}" class="section">
-    <view class="section-title">我的预约</view>
+  <view wx:if="{{isCustomer && customerAppointmentSection.visible !== false}}" class="section">
+    <view class="section-title">{{customerAppointmentSection.title}}</view>
     <view wx:if="{{noAppointments}}" class="empty card">
-      <view class="empty-title">还没有预约</view>
-      <view class="muted">先看看合适的阿姨，提交后顾问会联系确认。</view>
-      <button class="primary-button empty-button" bindtap="goList">去找阿姨</button>
+      <view class="empty-title">{{customerAppointmentSection.emptyTitle}}</view>
+      <view class="muted">{{customerAppointmentSection.emptyDescription}}</view>
+      <button class="primary-button empty-button" bindtap="goList">{{customerAppointmentSection.buttonText}}</button>
     </view>
     <view wx:for="{{appointments}}" wx:key="id" class="appointment card">
       <view class="appointment-top">
@@ -131,12 +117,12 @@
     </view>
   </view>
 
-  <view wx:if="{{isAyi}}" class="section">
-    <view class="section-title">我的接单</view>
+  <view wx:if="{{isAyi && ayiApplicationSection.visible !== false}}" class="section">
+    <view class="section-title">{{ayiApplicationSection.title}}</view>
     <view wx:if="{{noApplications}}" class="empty card">
-      <view class="empty-title">还没有接单申请</view>
-      <view class="muted">去服务页查看客户需求，选择合适的工作。</view>
-      <button class="primary-button empty-button" bindtap="goHall">去找工作</button>
+      <view class="empty-title">{{ayiApplicationSection.emptyTitle}}</view>
+      <view class="muted">{{ayiApplicationSection.emptyDescription}}</view>
+      <button class="primary-button empty-button" bindtap="goHall">{{ayiApplicationSection.buttonText}}</button>
     </view>
     <view wx:for="{{applications}}" wx:key="id" class="appointment card">
       <view class="appointment-top">

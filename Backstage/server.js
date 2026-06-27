@@ -6,6 +6,8 @@ const accessControl = require('./accessControl');
 const authRepository = require('./repositories/authRepository');
 const backstageRepository = require('./repositories/backstageRepository');
 const companyProfileRepository = require('./repositories/companyProfileRepository');
+const ayiAvailabilityRepository = require('./repositories/ayiAvailabilityRepository');
+const demandFollowUpRepository = require('./repositories/demandFollowUpRepository');
 const demandMatchRepository = require('./repositories/demandMatchRepository');
 const resourceRepository = require('./repositories/resourceRepository');
 const serviceCatalogRepository = require('./repositories/serviceCatalogRepository');
@@ -19,6 +21,7 @@ const SERVICE_UPLOAD_DIR = path.join(PUBLIC_DIR, 'uploads', 'service-modules');
 const loginAttempts = new Map();
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_MAX_ATTEMPTS = 10;
+const SERVICE_MODULE_TYPES = new Set(['highlight', 'service', 'shortcut']);
 
 const contentTypes = {
   '.html': 'text/html; charset=utf-8',
@@ -34,6 +37,13 @@ const contentTypes = {
 
 function readData() {
   return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+}
+
+function getServiceModuleTypeFromQuery(req) {
+  const query = new URL(req.url, `http://${req.headers.host || `localhost:${PORT}`}`).searchParams;
+  const moduleType = query.get('moduleType');
+  if (!moduleType) return '';
+  return SERVICE_MODULE_TYPES.has(moduleType) ? moduleType : '__invalid__';
 }
 
 function writeData(data) {
@@ -52,6 +62,17 @@ function send(res, status, body, type = 'application/json; charset=utf-8') {
     return;
   }
   res.end(JSON.stringify(body));
+}
+
+function sendCsv(res, filename, content) {
+  res.writeHead(200, {
+    'Content-Type': 'text/csv; charset=utf-8',
+    'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Demand-Access-Token'
+  });
+  res.end(content);
 }
 
 function readBody(req) {
@@ -77,6 +98,52 @@ function readBody(req) {
 function readDemandAccessToken(req) {
   const token = req.headers['x-demand-access-token'];
   return Array.isArray(token) ? token[0] : token;
+}
+
+function auditQueryFromSearchParams(searchParams) {
+  return {
+    page: searchParams.get('page'),
+    pageSize: searchParams.get('pageSize'),
+    limit: searchParams.get('limit'),
+    actor: searchParams.get('actor'),
+    role: searchParams.get('role'),
+    action: searchParams.get('action'),
+    entityType: searchParams.get('entityType'),
+    startTime: searchParams.get('startTime'),
+    endTime: searchParams.get('endTime'),
+    keyword: searchParams.get('keyword')
+  };
+}
+
+function csvSafeCell(value) {
+  let text = typeof value === 'string' ? value : JSON.stringify(value ?? '');
+  if (/^[=+\-@]/.test(text)) {
+    text = `'${text}`;
+  }
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+function auditLogsToCsv(rows) {
+  const headers = ['操作时间', '操作人', '角色', '操作类型', '模块', '对象ID', '操作摘要', '修改前', '修改后'];
+  const lines = [headers.map(csvSafeCell).join(',')].concat(rows.map((row) => [
+    row.createdAt || '',
+    row.actor || 'system',
+    row.actorRole || '',
+    row.action || '',
+    row.entityType || row.resourceType || '',
+    row.resourceId || '',
+    row.afterSummary || row.beforeSummary || '',
+    row.beforeData || null,
+    row.afterData || null
+  ].map(csvSafeCell).join(',')));
+  return `\ufeff${lines.join('\r\n')}`;
+}
+
+function timestampForFilename() {
+  const now = new Date();
+  const date = now.toISOString().slice(0, 10);
+  const time = now.toTimeString().slice(0, 8).replace(/:/g, '');
+  return `${date}_${time}`;
 }
 
 function getRequestOrigin(req) {
@@ -264,6 +331,15 @@ function requireBackstageUser(user) {
   }
 }
 
+function requireBackstageResource(user, resource, method = 'GET') {
+  const authz = accessControl.canAccessResource(user, resource, method);
+  if (!authz.ok) {
+    const error = new Error(authz.message || 'Permission denied');
+    error.status = authz.status || 403;
+    throw error;
+  }
+}
+
 function nextId(list) {
   return list.reduce((max, item) => Math.max(max, Number(item.id) || 0), 0) + 1;
 }
@@ -363,7 +439,7 @@ async function handleAuth(req, res, parts, currentUser) {
       send(res, 200, {
         ok: true,
         user: currentUser,
-        allowedResources: accessControl.allowedResourcesForRole(currentUser.role),
+        allowedResources: accessControl.allowedResourcesForUser(currentUser),
         canUseBackstage: accessControl.canUseBackstage(currentUser)
       });
       return;
@@ -491,9 +567,38 @@ async function handleApi(req, res) {
       return;
     }
     try {
-      send(res, 200, await backstageRepository.listAuditLogs());
+      const query = new URL(req.url, `http://${req.headers.host || `localhost:${PORT}`}`).searchParams;
+      const filters = auditQueryFromSearchParams(query);
+      if (parts[2] === 'export') {
+        const rows = await backstageRepository.listAuditLogsForExport(Object.assign({}, filters, { limit: 10000 }));
+        await backstageRepository.writeAuditExport(getActor(req, currentUser), filters, rows.length);
+        sendCsv(res, `操作记录_${timestampForFilename()}.csv`, auditLogsToCsv(rows));
+        return;
+      }
+      send(res, 200, await backstageRepository.listAuditLogs(filters));
     } catch (error) {
       sendError(res, 503, 'Database unavailable', error.message);
+    }
+    return;
+  }
+
+  if (resource === 'todos' && req.method === 'GET') {
+    const authz = accessControl.canAccessResource(currentUser, 'todos', req.method);
+    if (!authz.ok) {
+      send(res, authz.status, { ok: false, error: authz.message });
+      return;
+    }
+    try {
+      const query = new URL(req.url, `http://${req.headers.host || `localhost:${PORT}`}`).searchParams;
+      send(res, 200, await demandFollowUpRepository.listTodos(currentUser, {
+        category: query.get('category'),
+        keyword: query.get('keyword'),
+        operatorId: query.get('operatorId'),
+        page: query.get('page'),
+        pageSize: query.get('pageSize')
+      }));
+    } catch (error) {
+      sendError(res, error.status || 400, 'Load todos failed', error.message);
     }
     return;
   }
@@ -615,9 +720,157 @@ async function handleApi(req, res) {
     return;
   }
 
+  if (resource === 'ayis' && parts[2] === 'candidates' && req.method === 'GET') {
+    const authz = accessControl.canAccessResource(currentUser, 'ayis', req.method);
+    if (!authz.ok) {
+      send(res, authz.status, { ok: false, error: authz.message });
+      return;
+    }
+    try {
+      const query = new URL(req.url, `http://${req.headers.host || `localhost:${PORT}`}`).searchParams;
+      send(res, 200, Object.assign({ ok: true }, await ayiAvailabilityRepository.listCandidates(Object.fromEntries(query.entries()), currentUser)));
+    } catch (error) {
+      sendError(res, error.status || 400, 'Load ayi candidates failed', error.message);
+    }
+    return;
+  }
+
+  if (resource === 'ayis' && id && parts[3] === 'availability') {
+    const authz = accessControl.canAccessResource(currentUser, 'ayis', req.method);
+    if (!authz.ok) {
+      send(res, authz.status, { ok: false, error: authz.message });
+      return;
+    }
+    try {
+      if (req.method === 'GET') {
+        send(res, 200, { ok: true, profile: await ayiAvailabilityRepository.getProfile(id) });
+        return;
+      }
+      if (req.method === 'PUT' || req.method === 'POST') {
+        const body = await readBody(req);
+        send(res, 200, { ok: true, profile: await ayiAvailabilityRepository.updateAvailability(id, body, getActor(req, currentUser)) });
+        return;
+      }
+      send(res, 405, { error: 'Method not allowed' });
+    } catch (error) {
+      sendError(res, error.status || 400, 'Ayi availability failed', error.message);
+    }
+    return;
+  }
+
+  if (resource === 'ayis' && id && parts[3] === 'preferences') {
+    const authz = accessControl.canAccessResource(currentUser, 'ayis', req.method);
+    if (!authz.ok) {
+      send(res, authz.status, { ok: false, error: authz.message });
+      return;
+    }
+    try {
+      if (req.method !== 'PUT' && req.method !== 'POST') {
+        send(res, 405, { error: 'Method not allowed' });
+        return;
+      }
+      const body = await readBody(req);
+      send(res, 200, { ok: true, profile: await ayiAvailabilityRepository.updatePreferences(id, body, getActor(req, currentUser)) });
+    } catch (error) {
+      sendError(res, error.status || 400, 'Ayi preferences failed', error.message);
+    }
+    return;
+  }
+
+  if (resource === 'ayis' && id && parts[3] === 'status-history' && req.method === 'GET') {
+    const authz = accessControl.canAccessResource(currentUser, 'ayis', req.method);
+    if (!authz.ok) {
+      send(res, authz.status, { ok: false, error: authz.message });
+      return;
+    }
+    try {
+      send(res, 200, { ok: true, history: await ayiAvailabilityRepository.listHistory(id, currentUser) });
+    } catch (error) {
+      sendError(res, error.status || 400, 'Load ayi history failed', error.message);
+    }
+    return;
+  }
+
+  if (resource === 'ayis' && id && parts[3] === 'recommendation-check' && req.method === 'GET') {
+    const authz = accessControl.canAccessResource(currentUser, 'ayis', req.method);
+    if (!authz.ok) {
+      send(res, authz.status, { ok: false, error: authz.message });
+      return;
+    }
+    try {
+      const query = new URL(req.url, `http://${req.headers.host || `localhost:${PORT}`}`).searchParams;
+      send(res, 200, { ok: true, recommendation: await ayiAvailabilityRepository.checkRecommendable(id, Object.fromEntries(query.entries())) });
+    } catch (error) {
+      sendError(res, error.status || 400, 'Check ayi recommendation failed', error.message);
+    }
+    return;
+  }
+
+  if (resource === 'demands' && parts[2] === 'assignable-operators' && req.method === 'GET') {
+    const authz = accessControl.canAccessResource(currentUser, 'demands', req.method);
+    if (!authz.ok) {
+      send(res, authz.status, { ok: false, error: authz.message });
+      return;
+    }
+    try {
+      send(res, 200, {
+        ok: true,
+        operators: await demandFollowUpRepository.listAssignableOperators()
+      });
+    } catch (error) {
+      sendError(res, error.status || 400, 'Load assignable operators failed', error.message);
+    }
+    return;
+  }
+
+  if (resource === 'demands' && id && parts[3] === 'assignment') {
+    const authz = accessControl.canAccessResource(currentUser, 'demands', req.method);
+    if (!authz.ok) {
+      send(res, authz.status, { ok: false, error: authz.message });
+      return;
+    }
+    try {
+      if (req.method !== 'PUT' && req.method !== 'POST') {
+        send(res, 405, { error: 'Method not allowed' });
+        return;
+      }
+      const body = await readBody(req);
+      send(res, 200, {
+        ok: true,
+        demand: await demandFollowUpRepository.assignDemand(id, body, currentUser)
+      });
+    } catch (error) {
+      sendError(res, error.status || 400, 'Assign demand failed', error.message);
+    }
+    return;
+  }
+
+  if (resource === 'demands' && id && parts[3] === 'follow-ups') {
+    const authz = accessControl.canAccessResource(currentUser, 'demands', req.method);
+    if (!authz.ok) {
+      send(res, authz.status, { ok: false, error: authz.message });
+      return;
+    }
+    try {
+      if (req.method === 'GET') {
+        send(res, 200, Object.assign({ ok: true }, await demandFollowUpRepository.listFollowUps(id, currentUser)));
+        return;
+      }
+      if (req.method === 'POST') {
+        const body = await readBody(req);
+        send(res, 201, Object.assign({ ok: true }, await demandFollowUpRepository.createFollowUp(id, body, currentUser)));
+        return;
+      }
+      send(res, 405, { error: 'Method not allowed' });
+    } catch (error) {
+      sendError(res, error.status || 400, 'Follow-up failed', error.message);
+    }
+    return;
+  }
+
   if (resource === 'demands' && id && parts[3] === 'matches') {
     try {
-      requireBackstageUser(currentUser);
+      requireBackstageResource(currentUser, 'demands', req.method);
       if (req.method === 'GET') {
         send(res, 200, {
           ok: true,
@@ -641,7 +894,7 @@ async function handleApi(req, res) {
 
   if (resource === 'demandMatches' && id && parts[3] === 'expire' && req.method === 'POST') {
     try {
-      requireBackstageUser(currentUser);
+      requireBackstageResource(currentUser, 'demands', req.method);
       const match = await demandMatchRepository.expireBackstageMatch(id, getActor(req, currentUser));
       send(res, 200, { ok: true, match });
     } catch (error) {
@@ -731,6 +984,15 @@ async function handleApi(req, res) {
           send(res, 404, { error: 'Record not found' });
           return;
         }
+        const serviceModuleType = resource === 'serviceModules' ? getServiceModuleTypeFromQuery(req) : '';
+        if (serviceModuleType === '__invalid__') {
+          send(res, 400, { ok: false, error: 'Invalid moduleType' });
+          return;
+        }
+        if (resource === 'serviceModules' && serviceModuleType && record.moduleType !== serviceModuleType) {
+          send(res, 403, { ok: false, error: 'Cannot load service module across type pages' });
+          return;
+        }
         if (!accessControl.canAccessRecord(currentUser, resource, record)) {
           send(res, 403, { ok: false, error: 'Permission denied' });
           return;
@@ -738,7 +1000,23 @@ async function handleApi(req, res) {
         send(res, 200, expandResourceImages(req, resource, record));
         return;
       }
-      const filter = accessControl.listFilterForUser(currentUser, resource);
+      const serviceModuleType = resource === 'serviceModules' ? getServiceModuleTypeFromQuery(req) : '';
+      if (serviceModuleType === '__invalid__') {
+        send(res, 400, { ok: false, error: 'Invalid moduleType' });
+        return;
+      }
+      const accessFilter = accessControl.listFilterForUser(currentUser, resource);
+      const filters = [];
+      const params = [];
+      if (accessFilter) {
+        filters.push(accessFilter.clause);
+        params.push(...(accessFilter.params || []));
+      }
+      if (serviceModuleType) {
+        params.push(serviceModuleType);
+        filters.push(`module_type = $${params.length}`);
+      }
+      const filter = filters.length ? { clause: filters.join(' AND '), params } : null;
       const records = filter ? await resourceRepository.listWhere(resource, filter) : await resourceRepository.list(resource);
       send(res, 200, expandResourceImages(req, resource, records));
     } catch (error) {
@@ -750,7 +1028,19 @@ async function handleApi(req, res) {
   if (req.method === 'POST') {
     try {
       const body = await readBody(req);
+      const serviceModuleType = resource === 'serviceModules' ? getServiceModuleTypeFromQuery(req) : '';
+      if (serviceModuleType === '__invalid__') {
+        send(res, 400, { ok: false, error: 'Invalid moduleType' });
+        return;
+      }
       const payload = accessControl.scopePayloadForCreate(currentUser, resource, body);
+      if (resource === 'serviceModules') {
+        if (!serviceModuleType) {
+          send(res, 400, { ok: false, error: 'moduleType query is required' });
+          return;
+        }
+        payload.moduleType = serviceModuleType;
+      }
       const preparedPayload = resource === 'stores'
         ? prepareStoreImagePayload(req, payload)
         : resource === 'serviceModules'
@@ -776,7 +1066,19 @@ async function handleApi(req, res) {
         send(res, 403, { ok: false, error: 'Permission denied' });
         return;
       }
+      const serviceModuleType = resource === 'serviceModules' ? getServiceModuleTypeFromQuery(req) : '';
+      if (serviceModuleType === '__invalid__') {
+        send(res, 400, { ok: false, error: 'Invalid moduleType' });
+        return;
+      }
+      if (resource === 'serviceModules' && serviceModuleType && before.moduleType !== serviceModuleType) {
+        send(res, 403, { ok: false, error: 'Cannot edit service module across type pages' });
+        return;
+      }
       const payload = accessControl.scopePayloadForUpdate(currentUser, resource, body);
+      if (resource === 'serviceModules') {
+        payload.moduleType = before.moduleType;
+      }
       const preparedPayload = resource === 'stores'
         ? prepareStoreImagePayload(req, payload, id)
         : resource === 'serviceModules'
@@ -803,6 +1105,15 @@ async function handleApi(req, res) {
       }
       if (!accessControl.canAccessRecord(currentUser, resource, before)) {
         send(res, 403, { ok: false, error: 'Permission denied' });
+        return;
+      }
+      const serviceModuleType = resource === 'serviceModules' ? getServiceModuleTypeFromQuery(req) : '';
+      if (serviceModuleType === '__invalid__') {
+        send(res, 400, { ok: false, error: 'Invalid moduleType' });
+        return;
+      }
+      if (resource === 'serviceModules' && serviceModuleType && before.moduleType !== serviceModuleType) {
+        send(res, 403, { ok: false, error: 'Cannot delete service module across type pages' });
         return;
       }
       const deleted = await resourceRepository.remove(resource, id, getActor(req, currentUser));

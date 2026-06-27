@@ -34,6 +34,41 @@
       <text class="identity-switch" bindtap="switchRole">切换身份</text>
     </view>
 
+    <view wx:if="{{customerHero.visible !== false}}" class="customer-home-hero">
+      <view class="customer-home-hero-copy">
+        <view class="customer-home-hero-meta">
+          <image
+            wx:if="{{companyLogoDisplay}}"
+            class="customer-home-logo"
+            src="{{companyLogoDisplay}}"
+            mode="aspectFit"
+          />
+          <text class="customer-home-city">{{companyDefaultCity}}</text>
+          <text class="customer-home-name">{{companyDisplayName}}</text>
+        </view>
+        <view class="customer-home-title">{{customerHero.title}}</view>
+        <view class="customer-home-subtitle">{{customerHero.subtitle}}</view>
+      </view>
+      <view class="customer-home-actions">
+        <button
+          class="customer-home-action primary"
+          bindtap="handleCustomerHeroTap"
+          data-target-type="{{customerHero.primaryTargetType}}"
+          data-target-value="{{customerHero.primaryTargetValue}}"
+        >
+          {{customerHero.primaryText}}
+        </button>
+        <button
+          class="customer-home-action secondary"
+          bindtap="handleCustomerHeroTap"
+          data-target-type="{{customerHero.secondaryTargetType}}"
+          data-target-value="{{customerHero.secondaryTargetValue}}"
+        >
+          {{customerHero.secondaryText}}
+        </button>
+      </view>
+    </view>
+
     <view wx:if="{{isCustomer && companyBanners.length > 0}}" class="company-showcase">
       <view class="company-showcase-header">
         <text class="company-showcase-heading">公司展示</text>
@@ -196,45 +231,62 @@
 
   <view wx:if="{{isAyi}}" class="ayi-page">
     <view class="ayi-topbar">
-      <view>
-        <view class="ayi-page-title">阿姨接单</view>
-        <view class="muted">北京 · 今日可申请工作</view>
+      <view wx:if="{{ayiTop.visible !== false}}">
+        <view class="ayi-brand-line">
+          <image
+            wx:if="{{companyLogoDisplay}}"
+            class="ayi-brand-logo"
+            src="{{companyLogoDisplay}}"
+            mode="aspectFit"
+          />
+          <text class="ayi-brand-name">{{companyDisplayName}}</text>
+        </view>
+        <view class="ayi-page-title">{{ayiTop.title}}</view>
+        <view class="muted">{{companyDefaultCity}} · {{ayiTop.description}}</view>
       </view>
       <text class="identity-switch" bindtap="switchRole">切换身份</text>
     </view>
 
     <view class="ayi-grid compact-grid top-tools">
-      <view class="tool card" bindtap="goProfile">
-        <view class="tool-title">个人资料</view>
-        <view class="muted">经验、薪资、服务类型</view>
-      </view>
-      <view class="tool card" bindtap="goApplications">
-        <view class="tool-title">我的接单</view>
-        <view class="muted">{{applications.length}} 条申请</view>
+      <view
+        wx:for="{{ayiQuickEntries}}"
+        wx:key="id"
+        class="tool card"
+        bindtap="handleAyiShortcutTap"
+        data-item="{{item}}"
+      >
+        <view class="tool-title">{{item.title}}</view>
+        <view class="muted">{{item.description}}</view>
       </view>
     </view>
 
-    <view class="ayi-action-strip card">
+    <view wx:if="{{ayiProfilePrompt.visible !== false}}" class="ayi-action-strip card">
       <view class="verify-copy">
-        <view class="verify-title">完善资料，优先推荐</view>
-        <view class="muted">{{profileText}}</view>
+        <view class="verify-title">{{ayiProfilePrompt.title}}</view>
+        <view class="muted">{{ayiProfilePrompt.description || profileText}}</view>
       </view>
       <view class="strip-buttons">
-        <button class="mini-button" bindtap="goProfile">资料</button>
-        <button class="mini-button outline" bindtap="goCerts">证件</button>
+        <button class="mini-button" bindtap="goProfile">{{ayiProfilePrompt.profileButtonText}}</button>
+        <button class="mini-button outline" bindtap="goCerts">{{ayiProfilePrompt.certButtonText}}</button>
       </view>
     </view>
 
     <view class="ayi-mini-tabs">
-      <view class="mini-tab active" bindtap="goHall">工作</view>
-      <view class="mini-tab" bindtap="goApplications">我的接单 {{applications.length}}</view>
-      <view class="mini-tab" bindtap="goCerts">实名认证</view>
+      <view
+        wx:for="{{ayiNavItems}}"
+        wx:key="id"
+        class="mini-tab {{index === 0 ? 'active' : ''}}"
+        bindtap="handleAyiNavTap"
+        data-item="{{item}}"
+      >
+        {{item.title}}
+      </view>
     </view>
 
-    <view class="section priority-section">
+    <view wx:if="{{ayiRecommendedJobs.visible !== false}}" class="section priority-section">
       <view class="section-title">
-        <text>今日推荐工作</text>
-        <text class="more" bindtap="goHall">查看更多</text>
+        <text>{{ayiRecommendedJobs.title}}</text>
+        <text class="more" bindtap="goHall">{{ayiRecommendedJobs.moreText}}</text>
       </view>
       <view wx:for="{{todayJobs}}" wx:key="id" class="job-card card" bindtap="goHall" data-type="{{item.serviceType}}">
         <view class="job-top">

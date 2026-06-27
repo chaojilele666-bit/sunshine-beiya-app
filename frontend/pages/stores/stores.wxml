@@ -1,32 +1,34 @@
 <view class="page stores-page">
-  <view class="search-row">
-    <view class="city">{{city}}</view>
-    <view class="search-box">
-      <text class="search-icon">⌕</text>
-      <input placeholder="搜索门店/小区/大厦名称" value="{{query}}" bindinput="updateQuery" />
-    </view>
-  </view>
-
-  <view class="filter-panel">
-    <view class="district-row">
-      <view
-        wx:for="{{districts}}"
-        wx:key="name"
-        class="district {{item.activeClass}}"
-        bindtap="chooseDistrict"
-        data-district="{{item.name}}"
-      >
-        {{item.name}}
+  <view wx:if="{{storeFilterConfig.visible !== false}}">
+    <view class="search-row">
+      <view class="city">{{city}}</view>
+      <view class="search-box">
+        <text class="search-icon">⌕</text>
+        <input placeholder="{{storeFilterConfig.searchPlaceholder}}" value="{{query}}" bindinput="updateQuery" />
       </view>
     </view>
-    <view class="stay-check {{stayClass}}" bindtap="toggleStay">
-      <view class="box">{{stayMark}}</view>
-      <text>可住宿</text>
+
+    <view class="filter-panel">
+      <view class="district-row">
+        <view
+          wx:for="{{districts}}"
+          wx:key="name"
+          class="district {{item.activeClass}}"
+          bindtap="chooseDistrict"
+          data-district="{{item.name}}"
+        >
+          {{item.name}}
+        </view>
+      </view>
+      <view wx:if="{{storeFilterConfig.showCanStayFilter}}" class="stay-check {{stayClass}}" bindtap="toggleStay">
+        <view class="box">{{stayMark}}</view>
+        <text>可住宿</text>
+      </view>
     </view>
   </view>
 
   <view wx:if="{{emptyText}}" class="empty card">
-    <view class="empty-icon">⌛</view>
+    <view class="empty-icon">⌕</view>
     <view class="empty-text">{{emptyText}}</view>
   </view>
 
@@ -65,12 +67,14 @@
         <text class="line-label">覆盖</text>
         <text class="line-text">{{item.area}}</text>
       </view>
+      <view wx:if="{{storeActionConfig.detailHint}}" class="store-hint">{{storeActionConfig.detailHint}}</view>
       <view class="tag-row">
         <text wx:for="{{item.tags}}" wx:key="*this" class="store-tag">{{item}}</text>
       </view>
     </view>
-    <view class="store-actions">
+    <view wx:if="{{storeActionConfig.showNavigationButton || storeActionConfig.showPhoneButton}}" class="store-actions">
       <button
+        wx:if="{{storeActionConfig.showNavigationButton}}"
         class="nav-button"
         catchtap="navigateStore"
         data-id="{{item.id}}"
@@ -78,8 +82,13 @@
         data-address="{{item.address}}"
         data-latitude="{{item.latitude}}"
         data-longitude="{{item.longitude}}"
-      >导航</button>
-      <button class="call-button" catchtap="callStore" data-phone="{{item.phone}}">电话</button>
+      >{{storeActionConfig.navigationButtonText}}</button>
+      <button
+        wx:if="{{storeActionConfig.showPhoneButton}}"
+        class="call-button"
+        catchtap="callStore"
+        data-phone="{{item.phone}}"
+      >{{storeActionConfig.phoneButtonText}}</button>
     </view>
   </view>
 </view>

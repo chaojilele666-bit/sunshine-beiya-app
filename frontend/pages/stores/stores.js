@@ -1,12 +1,104 @@
 const { stores } = require('../../data/stores');
 
+const DEFAULT_CITY = '北京';
+const DEFAULT_ALL_DISTRICT = '全市区';
+const DEFAULT_DISTRICTS = [DEFAULT_ALL_DISTRICT, '东城区', '朝阳区', '海淀区', '丰台区', '通州区', '西城区'];
+const DEFAULT_FILTER_CONFIG = {
+  visible: true,
+  searchPlaceholder: '搜索门店/小区/大厅名称',
+  districts: DEFAULT_DISTRICTS,
+  showCanStayFilter: true,
+  emptyText: '没有符合条件的门店，换个条件试试'
+};
+const DEFAULT_ACTION_CONFIG = {
+  navigationButtonText: '导航',
+  phoneButtonText: '电话',
+  detailHint: '',
+  navigationUnavailableText: '当前门店暂未配置地图坐标。',
+  showNavigationButton: true,
+  showPhoneButton: true
+};
+
+function parseConfig(value) {
+  if (!value || typeof value !== 'string') return {};
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (error) {
+    return {};
+  }
+}
+
+function visible(value) {
+  return value !== false && value !== 'false' && value !== 0 && value !== '0';
+}
+
+function parseList(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item || '').trim()).filter(Boolean);
+  }
+  if (!value || typeof value !== 'string') return [];
+  return value.split(',').map((item) => item.trim()).filter(Boolean);
+}
+
+function uniqueList(list) {
+  const seen = {};
+  return list.filter((item) => {
+    if (!item || seen[item]) return false;
+    seen[item] = true;
+    return true;
+  });
+}
+
+function buildFilterConfig(module) {
+  const config = module ? parseConfig(module.targetValue) : {};
+  const configuredDistricts = parseList(config.districts || config.areas || (module && module.iconText));
+  const districts = uniqueList([DEFAULT_ALL_DISTRICT].concat(configuredDistricts.length ? configuredDistricts : DEFAULT_DISTRICTS.slice(1)));
+  return Object.assign({}, DEFAULT_FILTER_CONFIG, {
+    visible: module ? visible(module.visible) : DEFAULT_FILTER_CONFIG.visible,
+    searchPlaceholder: config.searchPlaceholder || config.placeholder || (module && module.title) || DEFAULT_FILTER_CONFIG.searchPlaceholder,
+    districts,
+    showCanStayFilter: config.showCanStayFilter !== false && config.showStayFilter !== false,
+    emptyText: config.emptyText || (module && module.description) || DEFAULT_FILTER_CONFIG.emptyText
+  });
+}
+
+function buildActionConfig(module) {
+  const config = module ? parseConfig(module.targetValue) : {};
+  return Object.assign({}, DEFAULT_ACTION_CONFIG, {
+    visible: module ? visible(module.visible) : true,
+    navigationButtonText: config.navigationButtonText || config.navText || (module && module.title) || DEFAULT_ACTION_CONFIG.navigationButtonText,
+    phoneButtonText: config.phoneButtonText || config.callText || (module && module.iconText) || DEFAULT_ACTION_CONFIG.phoneButtonText,
+    detailHint: config.detailHint || (module && module.description) || DEFAULT_ACTION_CONFIG.detailHint,
+    navigationUnavailableText: config.navigationUnavailableText || config.noLocationText || (module && module.targetValue && !Object.keys(config).length ? module.targetValue : '') || DEFAULT_ACTION_CONFIG.navigationUnavailableText,
+    showNavigationButton: config.showNavigationButton !== false && config.showNavButton !== false,
+    showPhoneButton: config.showPhoneButton !== false && config.showCallButton !== false
+  });
+}
+
+function sortStores(list) {
+  return list
+    .map((item, index) => ({ item, index }))
+    .sort((a, b) => {
+      const aHasSort = a.item.sort !== undefined && a.item.sort !== null && a.item.sort !== '';
+      const bHasSort = b.item.sort !== undefined && b.item.sort !== null && b.item.sort !== '';
+      if (aHasSort && bHasSort) return Number(a.item.sort || 0) - Number(b.item.sort || 0);
+      if (aHasSort) return -1;
+      if (bHasSort) return 1;
+      return a.index - b.index;
+    })
+    .map((entry) => entry.item);
+}
+
 Page({
   data: {
-    city: '北京',
+    city: DEFAULT_CITY,
     query: '',
-    districtNames: ['全市区', '东城区', '朝阳区', '海淀区', '丰台区', '通州区', '西城区'],
+    storeFilterConfig: DEFAULT_FILTER_CONFIG,
+    storeActionConfig: DEFAULT_ACTION_CONFIG,
+    districtNames: DEFAULT_DISTRICTS,
     districts: [],
-    activeDistrict: '全市区',
+    activeDistrict: DEFAULT_ALL_DISTRICT,
     canStayOnly: false,
     stayClass: '',
     stayMark: '',
@@ -27,9 +119,20 @@ Page({
 
   async refreshStores() {
     const app = getApp();
+    const modules = app.globalData.serviceModules || [];
+    const filterModule = modules.find((item) => item && item.moduleType === 'highlight'
+      && item.targetType === 'stores_page_filter');
+    const actionModule = modules.find((item) => item && item.moduleType === 'highlight'
+      && item.targetType === 'stores_page_actions');
+    const filterConfig = buildFilterConfig(filterModule);
+    const actionConfig = buildActionConfig(actionModule);
+    const currentDistrict = filterConfig.districts.includes(this.data.activeDistrict)
+      ? this.data.activeDistrict
+      : DEFAULT_ALL_DISTRICT;
     const nextStores = app.globalData.backendStores && app.globalData.backendStores.length ? app.globalData.backendStores : stores;
     console.info(`[stores-page] backendReady=${app.globalData.backendReady} source=${app.globalData.backendSource || 'unknown'} count=${nextStores.length}`);
-    const storesWithImages = await Promise.all(nextStores.map(async (store) => {
+    const visibleStoreSource = sortStores(nextStores.filter((store) => store && store.visible !== false));
+    const storesWithImages = await Promise.all(visibleStoreSource.map(async (store) => {
       try {
         const displayImage = await app.resolveImageForDisplay(store.image, { storeId: store.id });
         console.info(`[store-image] storeId=${store.id} source=${store.imageType || 'unknown'} urlLength=${store.imageLength || 0} status=${displayImage ? 'display-ready' : 'placeholder'}`);
@@ -46,8 +149,16 @@ Page({
       }
     }));
     this.setData({
+      city: (app.globalData.companyProfile || {}).defaultCity || DEFAULT_CITY,
+      storeFilterConfig: filterConfig,
+      storeActionConfig: actionConfig,
+      districtNames: filterConfig.districts,
+      activeDistrict: currentDistrict,
       stores: storesWithImages
-    }, this.applyFilters);
+    }, () => {
+      this.refreshDistricts();
+      this.applyFilters();
+    });
   },
 
   updateQuery(event) {
@@ -86,7 +197,7 @@ Page({
     const keyword = this.data.query.trim();
     const district = this.data.activeDistrict;
     const list = this.data.stores.filter((store) => {
-      const matchDistrict = district === '全市区' || store.district === district;
+      const matchDistrict = district === DEFAULT_ALL_DISTRICT || store.district === district;
       const matchStay = !this.data.canStayOnly || store.canStay;
       const matchKeyword = !keyword ||
         store.name.indexOf(keyword) >= 0 ||
@@ -96,8 +207,10 @@ Page({
     });
 
     this.setData({
-      visibleStores: list,
-      emptyText: list.length ? '' : '没有符合条件的门店，换个条件试试吧'
+      visibleStores: this.data.storeFilterConfig.visible === false ? [] : list,
+      emptyText: this.data.storeFilterConfig.visible === false
+        ? this.data.storeFilterConfig.emptyText
+        : (list.length ? '' : this.data.storeFilterConfig.emptyText)
     });
   },
 
@@ -133,7 +246,7 @@ Page({
 
     wx.showModal({
       title: '门店导航',
-      content: `当前门店暂未配置地图坐标。\n\n门店：${name}\n地址：${address}`,
+      content: `${this.data.storeActionConfig.navigationUnavailableText}\n\n门店：${name}\n地址：${address}`,
       showCancel: false,
       confirmText: '知道了'
     });

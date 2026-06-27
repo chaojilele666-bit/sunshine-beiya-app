@@ -8,6 +8,18 @@ const DEFAULTS = {
   ayi: { username: 'ayi.local', phone: '13900000001', profileTable: 'ayis' }
 };
 
+const OPERATOR_PERMISSIONS = [
+  '阿姨管理',
+  '客户需求',
+  '预约面试',
+  '接单申请',
+  '订单跟进',
+  '人工派单',
+  '门店信息',
+  '服务中心',
+  '首页轮播'
+];
+
 function requiredPassword(role) {
   const key = `${role.toUpperCase()}_TEST_PASSWORD`;
   const password = process.env[key] || process.env.AUTH_TEST_PASSWORD;
@@ -24,11 +36,12 @@ async function findBackstageProfile(client, roleName, fallbackPhone) {
   );
   if (result.rows[0]) return result.rows[0];
 
+  const permissions = roleName === '运营端' ? OPERATOR_PERMISSIONS : ['管理端全部权限'];
   const inserted = await client.query(
     `INSERT INTO backstage_accounts (name, phone, role, entry, permissions, status, note)
-     VALUES ($1,$2,$3,'后台管理',ARRAY['local auth test'],'启用','Local auth test profile')
+     VALUES ($1,$2,$3,'后台管理',$4,'启用','Local auth test profile')
      RETURNING id, phone`,
-    [`${roleName}测试账号`, fallbackPhone, roleName]
+    [`${roleName}测试账号`, fallbackPhone, roleName, permissions]
   );
   return inserted.rows[0];
 }
