@@ -27,6 +27,11 @@ Page({
   },
 
   submitBooking() {
+    const app = getApp();
+    if (!app.isLoggedIn()) {
+      app.requireLogin().catch(() => {});
+      return;
+    }
     const { form, ayi } = this.data;
     if (!form.name || !form.phone || !form.date || !form.address) {
       wx.showToast({
@@ -36,7 +41,7 @@ Page({
       return;
     }
 
-    getApp().addAppointment(Object.assign({
+    app.addAppointment(Object.assign({
       ayiId: ayi.id,
       ayiName: ayi.name,
       role: ayi.role || ayi.serviceType,

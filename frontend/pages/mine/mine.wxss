@@ -45,6 +45,72 @@
   font-weight: 800;
 }
 
+.login-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 18rpx;
+  padding: 22rpx 24rpx;
+  box-sizing: border-box;
+}
+
+.login-status-title {
+  margin-bottom: 6rpx;
+  color: #1f2933;
+  font-size: 28rpx;
+  font-weight: 800;
+}
+
+.login-status-button {
+  flex: 0 0 auto;
+  height: 60rpx;
+  line-height: 60rpx;
+  padding: 0 24rpx;
+  border-radius: 30rpx;
+  font-size: 24rpx;
+}
+
+.message-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 18rpx;
+  padding: 22rpx 24rpx;
+  box-sizing: border-box;
+}
+
+.message-entry-title {
+  margin-bottom: 6rpx;
+  color: #1f2933;
+  font-size: 28rpx;
+  font-weight: 800;
+}
+
+.message-entry-right {
+  display: flex;
+  align-items: center;
+}
+
+.message-badge {
+  min-width: 34rpx;
+  height: 34rpx;
+  line-height: 34rpx;
+  margin-right: 14rpx;
+  padding: 0 10rpx;
+  border-radius: 999rpx;
+  color: #ffffff;
+  background: #f04438;
+  text-align: center;
+  font-size: 22rpx;
+  font-weight: 700;
+}
+
+.message-arrow {
+  color: #9aa4b2;
+  font-size: 42rpx;
+  line-height: 1;
+}
+
 .choose-button {
   margin-top: 28rpx;
 }

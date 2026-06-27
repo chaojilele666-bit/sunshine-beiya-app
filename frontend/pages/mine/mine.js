@@ -211,6 +211,9 @@ Page({
     noAppointments: true,
     demands: [],
     noDemands: true,
+    isLoggedIn: false,
+    authUser: null,
+    unreadCount: 0,
     companyProfile: DEFAULT_COMPANY_PROFILE
   },
 
@@ -227,6 +230,7 @@ Page({
     const role = app.globalData.role || '';
     const modules = app.globalData.serviceModules || [];
     const companyProfile = Object.assign({}, DEFAULT_COMPANY_PROFILE, app.globalData.companyProfile || {});
+    const authUser = app.globalData.authUser || wx.getStorageSync('miniprogramAuthUser') || null;
     const profile = app.globalData.ayiProfile;
     const applications = app.globalData.applications || [];
     const appointments = app.globalData.appointments || [];
@@ -272,6 +276,8 @@ Page({
       noAppointments: appointments.length === 0,
       demands: localDemands,
       noDemands: localDemands.length === 0,
+      isLoggedIn: Boolean(app.globalData.authToken || wx.getStorageSync('miniprogramAuthToken')),
+      authUser,
       displayLogo: ''
     });
     this.refreshShortcutIcons(customerShortcuts, 'customerShortcuts');
@@ -280,6 +286,18 @@ Page({
     if (role === 'customer') {
       this.loadCustomerDemands();
     }
+    this.refreshUnreadCount();
+  },
+
+  refreshUnreadCount() {
+    const app = getApp();
+    app.fetchUnreadCount()
+      .then((count) => {
+        this.setData({ unreadCount: count });
+      })
+      .catch(() => {
+        this.setData({ unreadCount: 0 });
+      });
   },
 
   refreshLogo(imageUrl) {
@@ -412,6 +430,18 @@ Page({
   goAbout() {
     wx.navigateTo({
       url: '/pages/about/about'
+    });
+  },
+
+  goLogin() {
+    wx.navigateTo({
+      url: '/pages/login/login'
+    });
+  },
+
+  goMessages() {
+    wx.navigateTo({
+      url: '/pages/messages/messages'
     });
   },
 

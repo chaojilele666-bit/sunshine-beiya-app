@@ -6,6 +6,8 @@ const accessControl = require('./accessControl');
 const authRepository = require('./repositories/authRepository');
 const backstageRepository = require('./repositories/backstageRepository');
 const companyProfileRepository = require('./repositories/companyProfileRepository');
+const miniprogramAuthRepository = require('./repositories/miniprogramAuthRepository');
+const notificationRepository = require('./repositories/notificationRepository');
 const ayiAvailabilityRepository = require('./repositories/ayiAvailabilityRepository');
 const demandFollowUpRepository = require('./repositories/demandFollowUpRepository');
 const demandMatchRepository = require('./repositories/demandMatchRepository');
@@ -395,6 +397,116 @@ function sendApiError(res, error, fallbackMessage = 'Request failed') {
   sendError(res, error.status || 400, fallbackMessage, error.message);
 }
 
+async function emitResourceNotifications(resource, record, before = null) {
+  try {
+    await db.transaction(async (client) => {
+      if (resource === 'appointments') {
+        const title = before ? '面试安排已更新' : '新面试已安排';
+        const summary = `${record.date || '待确认时间'} ${record.interviewMethod || ''} ${record.address || ''}`.trim();
+        await notificationRepository.notifyByPhone(client, record.phone, 'customer', {
+          messageType: before && record.status === '已取消' ? 'interview_cancelled' : 'interview_updated',
+          title,
+          summary: summary || '请进入小程序查看面试安排。',
+          entityType: 'appointments',
+          entityId: record.id,
+          pagePath: '/pages/messages/messages',
+          dedupeKey: `appointment-notice:${record.id}:${record.updatedAt || Date.now()}`,
+          channels: ['in_app', 'wechat_subscription']
+        });
+        if (record.ayiId) {
+          const ayiResult = await client.query('SELECT phone FROM ayis WHERE id = $1', [Number(record.ayiId)]);
+          const ayiPhone = ayiResult.rows[0] && ayiResult.rows[0].phone;
+          await notificationRepository.notifyByPhone(client, ayiPhone, 'ayi', {
+            messageType: before && record.status === '已取消' ? 'interview_cancelled' : 'interview_updated',
+            title,
+            summary: summary || '请进入小程序查看面试安排。',
+            entityType: 'appointments',
+            entityId: record.id,
+            pagePath: '/pages/messages/messages',
+            dedupeKey: `appointment-ayi-notice:${record.id}:${record.updatedAt || Date.now()}`,
+            channels: ['in_app', 'wechat_subscription']
+          });
+        }
+        await notificationRepository.notifyBackstage(client, {
+          messageType: 'new_interview',
+          title,
+          summary: `${record.customerName || '客户'} ${summary || ''}`.trim(),
+          entityType: 'appointments',
+          entityId: record.id,
+          pagePath: '/pages/messages/messages',
+          dedupeKey: `appointment-backstage:${record.id}:${record.updatedAt || Date.now()}`
+        });
+        await notificationRepository.scheduleInterviewReminders(client, record);
+      }
+
+      if (resource === 'applications') {
+        await notificationRepository.notifyByPhone(client, record.ayiPhone, 'ayi', {
+          messageType: before ? 'application_status_changed' : 'application_submitted',
+          title: before ? '接单申请状态变化' : '申请已提交',
+          summary: before ? `您的申请状态已更新为：${record.status || '-'}` : '您的接单申请已提交，请等待工作人员处理。',
+          entityType: 'applications',
+          entityId: record.id,
+          pagePath: '/pages/my-applications/my-applications',
+          dedupeKey: `application-notice:${record.id}:${record.status || 'created'}:${record.updatedAt || Date.now()}`,
+          channels: ['in_app', 'wechat_subscription']
+        });
+        if (!before) {
+          await notificationRepository.notifyBackstage(client, {
+            messageType: 'new_application',
+            title: '新阿姨申请',
+            summary: `${record.ayiName || '阿姨'} 提交了接单申请。`,
+            entityType: 'applications',
+            entityId: record.id,
+            pagePath: '/pages/messages/messages',
+            dedupeKey: `new-application:${record.id}`
+          });
+        }
+      }
+
+      if (resource === 'ayis') {
+        if (!before) {
+          await notificationRepository.notifyBackstage(client, {
+            messageType: 'ayi_review_pending',
+            title: '阿姨资料待审核',
+            summary: `${record.name || '阿姨'} 提交或录入了资料。`,
+            entityType: 'ayis',
+            entityId: record.id,
+            pagePath: '/pages/messages/messages',
+            dedupeKey: `ayi-review-pending:${record.id}`
+          });
+        } else if (before.status !== record.status) {
+          await notificationRepository.notifyByPhone(client, record.phone, 'ayi', {
+            messageType: 'review_result',
+            title: '资料审核结果更新',
+            summary: `您的资料审核状态已更新为：${record.status || '-'}`,
+            entityType: 'ayis',
+            entityId: record.id,
+            pagePath: '/pages/ayi-profile/ayi-profile',
+            dedupeKey: `ayi-review-result:${record.id}:${record.status || ''}:${record.updatedAt || Date.now()}`,
+            channels: ['in_app', 'wechat_subscription']
+          });
+        }
+      }
+
+      if (resource === 'demands' && before && before.status !== record.status) {
+        await notificationRepository.notifyByPhone(client, record.phone, 'customer', {
+          messageType: 'demand_status_changed',
+          title: '需求状态变化',
+          summary: `您的需求状态已更新为：${record.status || '-'}`,
+          entityType: 'demands',
+          entityId: record.id,
+          pagePath: '/pages/demand-detail/demand-detail',
+          pageParams: { id: record.id },
+          dedupeKey: `demand-status:${record.id}:${record.status || ''}:${record.updatedAt || Date.now()}`,
+          channels: ['in_app', 'wechat_subscription']
+        });
+      }
+    });
+  } catch (error) {
+    console.warn(`[notifications] emit failed: ${error.message}`);
+  }
+}
+
 function requireBackstageUser(user) {
   if (!accessControl.canUseBackstage(user)) {
     const error = new Error('Backstage role required');
@@ -497,6 +609,56 @@ async function handleAuth(req, res, parts, currentUser) {
       return;
     }
 
+    if (['wechat-login', 'wechatLogin'].includes(action) && req.method === 'POST') {
+      const body = await readBody(req);
+      const ipAddress = getClientIp(req);
+      checkLoginRateLimit(`wechat:${body.code || ''}`, ipAddress);
+      const result = await miniprogramAuthRepository.loginWithWechat({
+        code: body.code,
+        role: body.role,
+        source: body.source || 'miniprogram',
+        ipAddress,
+        userAgent: req.headers['user-agent'] || null
+      });
+      clearLoginRateLimit(`wechat:${body.code || ''}`, ipAddress);
+      send(res, 200, Object.assign({ ok: true }, result));
+      return;
+    }
+
+    if (['wechat-phone-login', 'wechat-phone', 'wechatPhoneLogin'].includes(action) && req.method === 'POST') {
+      const body = await readBody(req);
+      const ipAddress = getClientIp(req);
+      checkLoginRateLimit(`wechat-phone:${body.phoneCode || ''}`, ipAddress);
+      const result = await miniprogramAuthRepository.loginWithWechatPhone({
+        loginCode: body.loginCode || body.code,
+        phoneCode: body.phoneCode,
+        role: body.role,
+        source: body.source || 'miniprogram',
+        ipAddress,
+        userAgent: req.headers['user-agent'] || null
+      });
+      clearLoginRateLimit(`wechat-phone:${body.phoneCode || ''}`, ipAddress);
+      send(res, 200, Object.assign({ ok: true }, result));
+      return;
+    }
+
+    if (action === 'miniprogram-users' && req.method === 'GET') {
+      if (!currentUser) {
+        send(res, 401, { ok: false, error: 'Login required' });
+        return;
+      }
+      const authz = accessControl.canAccessModule(currentUser, 'accounts');
+      if (!authz.ok) {
+        send(res, authz.status, { ok: false, error: authz.message });
+        return;
+      }
+      send(res, 200, {
+        ok: true,
+        users: await miniprogramAuthRepository.listMiniprogramUsers()
+      });
+      return;
+    }
+
     if (action === 'logout' && req.method === 'POST') {
       await authRepository.logout(getBearerToken(req), currentUser);
       send(res, 200, { ok: true });
@@ -528,7 +690,7 @@ async function handleAuth(req, res, parts, currentUser) {
       return;
     }
 
-    send(res, 404, { error: 'Unknown auth endpoint' });
+    send(res, 404, { ok: false, error: '登录服务暂时不可用，请稍后重试' });
   } catch (error) {
     if (error instanceof authRepository.AuthError || error.code) {
       sendAuthError(res, error);
@@ -566,6 +728,61 @@ async function handleApi(req, res) {
         error: 'Database unavailable',
         detail: error.message
       });
+    }
+    return;
+  }
+
+  if (resource === 'notifications') {
+    try {
+      if (!currentUser) {
+        send(res, 401, { ok: false, error: 'Login required' });
+        return;
+      }
+      if (parts[2] === 'subscription-config' && req.method === 'GET') {
+        send(res, 200, {
+          ok: true,
+          templates: notificationRepository.subscriptionConfig()
+        });
+        return;
+      }
+      if (parts[2] === 'unread-count' && req.method === 'GET') {
+        send(res, 200, {
+          ok: true,
+          count: await notificationRepository.unreadCount(currentUser)
+        });
+        return;
+      }
+      if (parts[2] === 'read-all' && req.method === 'PUT') {
+        await notificationRepository.markAllRead(currentUser);
+        send(res, 200, { ok: true });
+        return;
+      }
+      if (id && parts[3] === 'read' && req.method === 'PUT') {
+        const notification = await notificationRepository.markRead(currentUser, id);
+        if (!notification) {
+          send(res, 404, { ok: false, error: 'Notification not found' });
+          return;
+        }
+        send(res, 200, { ok: true, notification });
+        return;
+      }
+      if (req.method === 'GET' && parts.length === 2) {
+        const query = new URL(req.url, `http://${req.headers.host}`).searchParams;
+        send(res, 200, Object.assign({ ok: true }, await notificationRepository.listForUser(currentUser, {
+          unread: query.get('unread') || '',
+          messageType: query.get('messageType') || '',
+          keyword: query.get('keyword') || '',
+          storeId: query.get('storeId') || '',
+          startDate: query.get('startDate') || '',
+          endDate: query.get('endDate') || '',
+          page: query.get('page') || 1,
+          pageSize: query.get('pageSize') || 20
+        })));
+        return;
+      }
+      send(res, 405, { ok: false, error: 'Method not allowed' });
+    } catch (error) {
+      sendError(res, error.status || 400, 'Notifications failed', error.message);
     }
     return;
   }
@@ -1040,6 +1257,7 @@ async function handleApi(req, res) {
         statusUpdatedBy: currentUser && currentUser.id ? Number(currentUser.id) : null,
         statusUpdatedAt: new Date().toISOString()
       }, getActor(req, currentUser));
+      await emitResourceNotifications('appointments', record, before);
       send(res, 200, expandResourceImages(req, 'appointments', record));
     } catch (error) {
       sendError(res, error.status || 400, 'Update interview status failed', error.message);
@@ -1202,6 +1420,7 @@ async function handleApi(req, res) {
           ? prepareServiceModuleImagePayload(req, payload)
           : payload;
       const record = await resourceRepository.create(resource, preparedPayload, getActor(req, currentUser));
+      await emitResourceNotifications(resource, record, null);
       send(res, 201, expandResourceImages(req, resource, record));
     } catch (error) {
       sendError(res, error.status || 400, 'Create failed', error.message);
@@ -1244,6 +1463,7 @@ async function handleApi(req, res) {
         send(res, 404, { error: 'Record not found' });
         return;
       }
+      await emitResourceNotifications(resource, record, before);
       send(res, 200, expandResourceImages(req, resource, record));
     } catch (error) {
       sendError(res, error.status || 400, 'Update failed', error.message);
@@ -1304,6 +1524,7 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log(`北京阳光北亚家政后台已启动: http://localhost:${PORT}`);
+  notificationRepository.startScheduler();
 });
 
 async function shutdown() {

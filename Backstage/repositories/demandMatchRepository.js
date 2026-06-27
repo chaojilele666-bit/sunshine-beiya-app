@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const db = require('../db');
 const ayiAvailabilityRepository = require('./ayiAvailabilityRepository');
+const notificationRepository = require('./notificationRepository');
 const resourceRepository = require('./resourceRepository');
 
 const DEMAND_STATUSES = new Set(['待处理', '已联系', '匹配中', '已匹配', '已关闭']);
@@ -162,6 +163,26 @@ async function createCustomerDemand(payload) {
     await resourceRepository.writeAudit(client, 'create', 'demands', demand.id, null, demand, {
       name: 'mini-program-customer',
       role: 'customer'
+    });
+    await notificationRepository.notifyByPhone(client, demand.phone, 'customer', {
+      messageType: 'demand_submitted',
+      title: '需求已提交',
+      summary: `您的${demand.serviceType || '家政'}需求已提交，顾问会尽快跟进。`,
+      entityType: 'demands',
+      entityId: demand.id,
+      pagePath: '/pages/demand-detail/demand-detail',
+      pageParams: { id: demand.id },
+      dedupeKey: `demand-submitted:${demand.id}`,
+      channels: ['in_app', 'wechat_subscription']
+    });
+    await notificationRepository.notifyBackstage(client, {
+      messageType: 'new_demand',
+      title: '新客户需求',
+      summary: `${demand.customerName || '客户'} 提交了${demand.serviceType || '家政'}需求。`,
+      entityType: 'demands',
+      entityId: demand.id,
+      pagePath: '/pages/messages/messages',
+      dedupeKey: `new-demand:${demand.id}`
     });
     return {
       demand,
@@ -352,6 +373,17 @@ async function createBackstageMatch(demandId, payload, actor) {
     );
     const match = matchRowToBackstage(afterJoin.rows[0]);
     await resourceRepository.writeAudit(client, 'recommend', 'demand_matches', match.id, null, match, actor);
+    await notificationRepository.notifyByPhone(client, demandBefore.phone, 'customer', {
+      messageType: 'demand_match_recommended',
+      title: '已推荐阿姨',
+      summary: `顾问已为您推荐${match.ayiName || '阿姨'}，请进入小程序查看。`,
+      entityType: 'demand_matches',
+      entityId: match.id,
+      pagePath: '/pages/demand-detail/demand-detail',
+      pageParams: { id: Number(demandId) },
+      dedupeKey: `demand-match-recommended:${match.id}`,
+      channels: ['in_app', 'wechat_subscription']
+    });
     return match;
   });
 }

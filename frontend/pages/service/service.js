@@ -484,6 +484,10 @@ Page({
     if (!demand) return;
 
     const app = getApp();
+    if (!app.isLoggedIn()) {
+      app.requireLogin().catch(() => {});
+      return;
+    }
     const profile = app.globalData.ayiProfile;
     const applyConfig = this.data.ayiApplyConfig || DEFAULT_AYI_APPLY_CONFIG;
     if (!profile) {

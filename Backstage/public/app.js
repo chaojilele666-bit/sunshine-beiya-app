@@ -303,6 +303,7 @@ let pendingImages = {};
 let currentUser = null;
 let authToken = null;
 let allowedResources = [];
+let miniprogramUsers = [];
 let expandedAccountRole = null;
 let currentModuleCategory = null;
 let currentModuleSearchKey = '';
@@ -336,6 +337,8 @@ let todoStats = {};
 let todoTotal = 0;
 let todoTotalPages = 1;
 let assignableOperators = [];
+let backstageNotifications = [];
+let notificationFilters = { messageType: '', startDate: '', endDate: '' };
 let exportInfoFilters = {
   type: 'demands',
   preset: 'today',
@@ -1324,6 +1327,14 @@ async function loadResource(resource = currentResource, options = {}) {
     form.innerHTML = '<p class="muted">今日待办按负责人和下次跟进时间生成，点击“进入客户详情”处理跟进。</p>';
     formTitle.textContent = '待办说明';
     return;
+  }
+  if (resource === 'accounts') {
+    try {
+      const result = await api('auth/miniprogram-users');
+      miniprogramUsers = result.users || [];
+    } catch (error) {
+      miniprogramUsers = [];
+    }
   }
   if (meta.custom === 'companyProfile') {
     const profile = await api('company-profile');
@@ -2471,9 +2482,47 @@ async function loadTodos(extra = {}) {
       assignableOperators = [];
     }
   }
+  try {
+    const reminderParams = new URLSearchParams({ unread: 'true', pageSize: '8' });
+    if (notificationFilters.messageType) reminderParams.set('messageType', notificationFilters.messageType);
+    if (notificationFilters.startDate) reminderParams.set('startDate', notificationFilters.startDate);
+    if (notificationFilters.endDate) reminderParams.set('endDate', notificationFilters.endDate);
+    const reminders = await api(`notifications?${reminderParams.toString()}`);
+    backstageNotifications = reminders.items || [];
+  } catch (error) {
+    backstageNotifications = [];
+  }
 }
 
 function renderTodos() {
+  const reminderRows = backstageNotifications.map((item) => `
+    <article class="todo-row notification-reminder">
+      <div>
+        <div class="record-title">${escapeHtml(item.title || '业务提醒')}</div>
+        <div class="record-line">${escapeHtml(item.summary || '')}</div>
+        <div class="record-line">${escapeHtml(item.messageType || '-')} / ${escapeHtml(formatDateTime(item.createdAt))}</div>
+      </div>
+      <div class="record-actions">
+        <button data-action="notification-read" data-id="${item.id}">标记已读</button>
+      </div>
+    </article>
+  `).join('') || '<p class="muted">暂无未读业务提醒。</p>';
+  const reminderToolbar = `
+    <div class="todo-toolbar notification-toolbar">
+      <label><span>类型</span><select name="notificationType">
+        <option value="" ${!notificationFilters.messageType ? 'selected' : ''}>全部</option>
+        <option value="new_" ${notificationFilters.messageType === 'new_' ? 'selected' : ''}>新增业务</option>
+        <option value="demand" ${notificationFilters.messageType === 'demand' ? 'selected' : ''}>客户需求</option>
+        <option value="interview" ${notificationFilters.messageType === 'interview' ? 'selected' : ''}>面试</option>
+        <option value="application" ${notificationFilters.messageType === 'application' ? 'selected' : ''}>接单申请</option>
+        <option value="review" ${notificationFilters.messageType === 'review' ? 'selected' : ''}>资料审核</option>
+      </select></label>
+      <label><span>开始日期</span><input type="date" name="notificationStartDate" value="${escapeHtml(notificationFilters.startDate)}" /></label>
+      <label><span>结束日期</span><input type="date" name="notificationEndDate" value="${escapeHtml(notificationFilters.endDate)}" /></label>
+      <button data-action="notification-filter">查询提醒</button>
+      <button class="secondary" data-action="notification-reset">重置提醒</button>
+    </div>
+  `;
   const categories = todoCategoryLabels().map(([key, label]) => `
     <button class="todo-category ${todoFilters.category === key ? 'active' : ''}" data-action="todo-category" data-category="${key}">
       <span>${label}</span>
@@ -2502,6 +2551,14 @@ function renderTodos() {
 
   list.innerHTML = `
     <section class="todo-shell">
+      <section class="todo-reminders">
+        <div class="todo-reminder-head">
+          <h3>业务提醒</h3>
+          <button class="secondary" data-action="notification-read-all">全部已读</button>
+        </div>
+        ${reminderToolbar}
+        ${reminderRows}
+      </section>
       <div class="todo-categories">${categories}</div>
       <div class="todo-toolbar">
         <label><span>关键字</span><input name="todoKeyword" value="${escapeHtml(todoFilters.keyword)}" placeholder="客户、电话、地址、服务或状态" /></label>
@@ -2599,6 +2656,29 @@ function renderAccountRow(item) {
   `;
 }
 
+function renderMiniprogramUserRow(item) {
+  const roleText = item.role === 'ayi' ? '阿姨' : '客户';
+  return `
+    <article class="account-row login-user-row">
+      <div>
+        <div class="record-title">${escapeHtml(item.username || `小程序用户 #${item.id}`)}</div>
+        <div class="record-line">手机号：${escapeHtml(item.phone || '未绑定')} / ${escapeHtml(roleText)} / 状态：${escapeHtml(item.status || '-')}</div>
+        <div class="record-line">
+          注册时间：${escapeHtml(formatDateTime(item.registeredAt))}
+          ｜最近登录：${escapeHtml(formatDateTime(item.lastLoginAt))}
+          ｜方式：${escapeHtml(item.lastLoginMethod || '-')}
+        </div>
+        <div class="record-line">
+          手机验证：${item.phoneVerified ? '已验证' : '未验证'}
+          ｜微信绑定：${item.wechatBound ? '已绑定' : '未绑定'}
+          ${item.wechatOpenidMasked ? `｜OpenID：${escapeHtml(item.wechatOpenidMasked)}` : ''}
+          ｜登录次数：${escapeHtml(item.loginCount || 0)}
+        </div>
+      </div>
+    </article>
+  `;
+}
+
 function renderAccountsList() {
   const planHtml = accountGroups.map((group) => `
     <article class="account-plan-card">
@@ -2635,6 +2715,16 @@ function renderAccountsList() {
     </div>
     <div class="account-plan-grid">${planHtml}</div>
     <div class="account-groups">${groupsHtml}</div>
+    <section class="account-group is-expanded">
+      <button class="account-group-toggle" type="button">
+        <div>
+          <h3>小程序注册与登录信息</h3>
+          <p>只读查看注册时间、最近登录、手机号验证和微信绑定状态，不展示 session_key 或完整 OpenID。</p>
+        </div>
+        <span>${miniprogramUsers.length} 个用户</span>
+      </button>
+      ${miniprogramUsers.length ? miniprogramUsers.map(renderMiniprogramUserRow).join('') : '<p class="muted">暂无小程序注册用户。</p>'}
+    </section>
   `;
 }
 
@@ -3642,6 +3732,49 @@ list.addEventListener('click', async (event) => {
       await openDemandDetailPanel(record);
     } catch (error) {
       alert(error.message || '加载客户详情失败');
+    }
+    return;
+  }
+  if (button.dataset.action === 'notification-read') {
+    try {
+      await api(`notifications/${button.dataset.id}/read`, { method: 'PUT' });
+      await loadTodos();
+      renderTodos();
+    } catch (error) {
+      alert('业务提醒标记失败，请稍后重试。');
+    }
+    return;
+  }
+  if (button.dataset.action === 'notification-filter') {
+    const type = list.querySelector('[name="notificationType"]');
+    const startDate = list.querySelector('[name="notificationStartDate"]');
+    const endDate = list.querySelector('[name="notificationEndDate"]');
+    if (startDate && endDate && startDate.value && endDate.value && startDate.value > endDate.value) {
+      alert('开始日期不能晚于结束日期。');
+      return;
+    }
+    notificationFilters = {
+      messageType: type ? type.value : '',
+      startDate: startDate ? startDate.value : '',
+      endDate: endDate ? endDate.value : ''
+    };
+    await loadTodos();
+    renderTodos();
+    return;
+  }
+  if (button.dataset.action === 'notification-reset') {
+    notificationFilters = { messageType: '', startDate: '', endDate: '' };
+    await loadTodos();
+    renderTodos();
+    return;
+  }
+  if (button.dataset.action === 'notification-read-all') {
+    try {
+      await api('notifications/read-all', { method: 'PUT' });
+      await loadTodos();
+      renderTodos();
+    } catch (error) {
+      alert('业务提醒标记失败，请稍后重试。');
     }
     return;
   }

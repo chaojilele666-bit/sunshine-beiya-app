@@ -1,6 +1,7 @@
 {
   "pages": [
     "pages/home/home",
+    "pages/login/login",
     "pages/service/service",
     "pages/stores/stores",
     "pages/store-detail/store-detail",
@@ -8,6 +9,7 @@
     "pages/booking/booking",
     "pages/demand/demand",
     "pages/demand-detail/demand-detail",
+    "pages/messages/messages",
     "pages/ayi-profile/ayi-profile",
     "pages/ayi-certs/ayi-certs",
     "pages/my-applications/my-applications",

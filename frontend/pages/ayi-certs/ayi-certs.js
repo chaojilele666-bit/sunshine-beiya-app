@@ -43,6 +43,10 @@ Page({
 
   saveCerts() {
     const app = getApp();
+    if (!app.isLoggedIn()) {
+      app.requireLogin().catch(() => {});
+      return;
+    }
     const profile = app.globalData.ayiProfile || {};
     app.saveAyiProfile(Object.assign({}, profile, {
       certs: this.data.certs

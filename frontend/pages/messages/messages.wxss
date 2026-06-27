@@ -1,0 +1,149 @@
+.messages-page {
+  min-height: 100vh;
+  padding: 28rpx 28rpx 120rpx;
+  background: #f4f6f7;
+  box-sizing: border-box;
+}
+
+.messages-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24rpx;
+}
+
+.messages-title {
+  color: #17233d;
+  font-size: 40rpx;
+  font-weight: 800;
+}
+
+.messages-subtitle {
+  margin-top: 8rpx;
+  color: #697386;
+  font-size: 26rpx;
+}
+
+.read-all-button {
+  flex: 0 0 auto;
+  height: 64rpx;
+  line-height: 64rpx;
+  margin: 0;
+  padding: 0 24rpx;
+  border-radius: 32rpx;
+  color: #1f8a70;
+  background: #eef8f4;
+  font-size: 24rpx;
+}
+
+.category-scroll {
+  width: 100%;
+  margin-bottom: 22rpx;
+  white-space: nowrap;
+}
+
+.category-list {
+  display: flex;
+}
+
+.category-pill {
+  flex: 0 0 auto;
+  margin-right: 14rpx;
+  padding: 14rpx 26rpx;
+  border-radius: 999rpx;
+  color: #52616f;
+  background: #ffffff;
+  border: 1rpx solid #e7ecef;
+  font-size: 26rpx;
+}
+
+.category-pill.is-active {
+  color: #ffffff;
+  background: #1f8a70;
+  border-color: #1f8a70;
+}
+
+.message-card,
+.empty-card {
+  margin-bottom: 18rpx;
+  padding: 24rpx;
+  border-radius: 20rpx;
+  background: #ffffff;
+  border: 1rpx solid #e7ecef;
+  box-sizing: border-box;
+}
+
+.message-card.is-unread {
+  border-color: #bfe7d9;
+}
+
+.message-top {
+  display: flex;
+  align-items: center;
+}
+
+.message-title {
+  flex: 1;
+  min-width: 0;
+  color: #17233d;
+  font-size: 30rpx;
+  font-weight: 700;
+}
+
+.unread-dot {
+  width: 16rpx;
+  height: 16rpx;
+  margin-left: 16rpx;
+  border-radius: 50%;
+  background: #f04438;
+}
+
+.message-summary {
+  margin-top: 10rpx;
+  color: #4b5563;
+  font-size: 26rpx;
+  line-height: 1.5;
+}
+
+.message-meta {
+  margin-top: 12rpx;
+  color: #8993a4;
+  font-size: 24rpx;
+}
+
+.empty-title {
+  color: #17233d;
+  font-size: 30rpx;
+  font-weight: 700;
+}
+
+.empty-desc {
+  margin-top: 8rpx;
+  color: #697386;
+  font-size: 26rpx;
+}
+
+.login-required-card {
+  margin-top: 96rpx;
+  padding: 40rpx 32rpx;
+  border-radius: 24rpx;
+  background: #ffffff;
+  border: 1rpx solid #e7ecef;
+  text-align: center;
+}
+
+.login-action {
+  width: 100%;
+  height: 76rpx;
+  line-height: 76rpx;
+  margin-top: 20rpx;
+  border-radius: 16rpx;
+  color: #1f8a70;
+  background: #eef8f4;
+  font-size: 28rpx;
+}
+
+.login-action.primary {
+  color: #ffffff;
+  background: #1f8a70;
+}

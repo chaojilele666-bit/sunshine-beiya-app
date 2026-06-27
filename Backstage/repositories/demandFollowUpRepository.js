@@ -1,4 +1,5 @@
 const db = require('../db');
+const notificationRepository = require('./notificationRepository');
 const resourceRepository = require('./resourceRepository');
 
 const FOLLOW_UP_METHODS = new Set(['phone', 'wechat', 'visit', 'other']);
@@ -296,6 +297,17 @@ async function createFollowUp(demandId, payload, user) {
     await resourceRepository.writeAudit(client, 'update_follow_up_time', 'demands', demandId, demandSummary(demandBefore), demandSummary(demandAfter), {
       name: user.username || user.phone || `user:${user.id}`,
       role: user.role
+    });
+    await notificationRepository.notifyByPhone(client, demandAfter.phone, 'customer', {
+      messageType: 'demand_follow_up',
+      title: '已安排跟进',
+      summary: '服务顾问已更新您的需求跟进记录，请进入小程序查看。',
+      entityType: 'demands',
+      entityId: demandId,
+      pagePath: '/pages/demand-detail/demand-detail',
+      pageParams: { id: Number(demandId) },
+      dedupeKey: `demand-follow-up:${insert.rows[0].id}`,
+      channels: ['in_app', 'wechat_subscription']
     });
     return {
       demand: demandSummary(demandAfter),

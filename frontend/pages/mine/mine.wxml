@@ -9,6 +9,27 @@
     </view>
   </view>
 
+  <view class="login-status card">
+    <view>
+      <view class="login-status-title">{{isLoggedIn ? '已登录' : '未登录'}}</view>
+      <view class="muted">
+        {{isLoggedIn ? '最近登录方式：' + (authUser.lastLoginMethod || '微信小程序') : '登录后可同步保存注册与最近登录信息'}}
+      </view>
+    </view>
+    <button wx:if="{{!isLoggedIn}}" class="ghost-button login-status-button" bindtap="goLogin">去登录</button>
+  </view>
+
+  <view class="message-entry card" bindtap="goMessages">
+    <view>
+      <view class="message-entry-title">消息中心</view>
+      <view class="muted">业务提醒、面试安排和审核结果</view>
+    </view>
+    <view class="message-entry-right">
+      <view wx:if="{{unreadCount > 0}}" class="message-badge">{{unreadCount > 99 ? '99+' : unreadCount}}</view>
+      <view class="message-arrow">›</view>
+    </view>
+  </view>
+
   <view wx:if="{{noRole}}" class="section tools-section">
     <view class="section-title">常用功能</view>
     <view class="tool-list">

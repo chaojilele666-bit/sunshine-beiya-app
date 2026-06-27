@@ -1,0 +1,38 @@
+<view class="login-page">
+  <view class="login-card">
+    <view class="login-title">登录北京阳光北亚家政</view>
+    <view class="login-desc">
+      登录后可以发布需求、申请工作、查看消息和管理个人资料。
+      您也可以暂不登录，先浏览服务、阿姨和门店信息。
+    </view>
+
+    <button
+      class="login-button primary"
+      loading="{{loading}}"
+      disabled="{{loading}}"
+      bindtap="loginWithWechat"
+    >
+      微信一键登录
+    </button>
+
+    <button
+      class="login-button secondary"
+      open-type="getPhoneNumber"
+      bindgetphonenumber="loginWithPhone"
+      loading="{{loading}}"
+      disabled="{{loading}}"
+    >
+      手机号登录
+    </button>
+
+    <button
+      class="guest-button"
+      disabled="{{loading}}"
+      bindtap="continueAsGuest"
+    >
+      暂不登录，先逛逛
+    </button>
+
+    <view wx:if="{{message}}" class="login-message">{{message}}</view>
+  </view>
+</view>

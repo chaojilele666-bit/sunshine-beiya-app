@@ -51,6 +51,11 @@ Page({
   },
 
   submitDemand() {
+    const app = getApp();
+    if (!app.isLoggedIn()) {
+      app.requireLogin().catch(() => {});
+      return;
+    }
     const { form, serviceTypes, serviceIndex } = this.data;
     const serviceType = serviceTypes[serviceIndex];
     if (!form.name || !form.phone || !form.address || !form.startTime || !serviceType) {
@@ -65,7 +70,7 @@ Page({
       title: '提交中'
     });
 
-    getApp().addDemand(Object.assign({
+    app.addDemand(Object.assign({
       customerName: form.name,
       serviceType,
       area: form.address,
@@ -81,8 +86,9 @@ Page({
           url: `/pages/demand-detail/demand-detail?id=${result.demandId}`
         });
       }, 700);
-    }).catch(() => {
+    }).catch((error) => {
       wx.hideLoading();
+      if (error && error.code === 'LOGIN_REQUIRED') return;
       wx.showToast({
         title: '提交失败，请确认后台服务是否可用',
         icon: 'none',

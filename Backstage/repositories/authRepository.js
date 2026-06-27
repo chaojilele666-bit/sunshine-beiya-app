@@ -39,7 +39,13 @@ function safeUser(row) {
     hasBackstageProfile: Boolean(row.backstage_profile_id),
     permissions,
     status: row.status,
+    phoneVerifiedAt: row.phone_verified_at,
+    registeredAt: row.registered_at || row.created_at,
     lastLoginAt: row.last_login_at,
+    lastLoginMethod: row.last_login_method,
+    loginSource: row.login_source,
+    loginCount: row.login_count,
+    wechatBound: Boolean(row.wechat_openid || row.wechat_unionid),
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -90,6 +96,56 @@ function sessionExpiry() {
   return new Date(Date.now() + SESSION_TTL_HOURS * 60 * 60 * 1000);
 }
 
+async function hasLoginTrackingFields(client) {
+  const result = await client.query(
+    `SELECT column_name
+     FROM information_schema.columns
+     WHERE table_name = 'user_accounts'
+       AND column_name IN ('last_login_method', 'login_source', 'login_count')`
+  );
+  const columns = new Set(result.rows.map((row) => row.column_name));
+  return columns.has('last_login_method') && columns.has('login_source') && columns.has('login_count');
+}
+
+async function issueSession(client, accountId, { method, source, ipAddress, userAgent }) {
+  const token = newToken();
+  const expiresAt = sessionExpiry();
+  if (await hasLoginTrackingFields(client)) {
+    await client.query(
+      `UPDATE user_accounts
+       SET failed_login_count = 0,
+           locked_until = NULL,
+           last_login_at = now(),
+           last_login_method = COALESCE($2, last_login_method),
+           login_source = COALESCE($3, login_source),
+           login_count = COALESCE(login_count, 0) + 1
+       WHERE id = $1`,
+      [accountId, method || null, source || null]
+    );
+  } else {
+    await client.query(
+      `UPDATE user_accounts
+       SET failed_login_count = 0,
+           locked_until = NULL,
+           last_login_at = now()
+       WHERE id = $1`,
+      [accountId]
+    );
+  }
+  await client.query(
+    `INSERT INTO auth_sessions (user_account_id, token_hash, user_agent, ip_address, expires_at)
+     VALUES ($1,$2,$3,$4,$5)`,
+    [accountId, tokenHash(token), userAgent || null, ipAddress || null, expiresAt]
+  );
+  const updated = await findById(accountId, client);
+  await writeAuthAudit(client, updated, 'login', { method: method || 'password' });
+  return {
+    token,
+    expiresAt,
+    user: safeUser(updated)
+  };
+}
+
 async function login({ identifier, password, ipAddress, userAgent }) {
   if (!identifier || !password) {
     throw new AuthError('INVALID_CREDENTIALS', 'Account and password are required', 400);
@@ -124,26 +180,12 @@ async function login({ identifier, password, ipAddress, userAgent }) {
       throw new AuthError('INVALID_CREDENTIALS', 'Password is incorrect', 401);
     }
 
-    const token = newToken();
-    const expiresAt = sessionExpiry();
-    await client.query(
-      `UPDATE user_accounts
-       SET failed_login_count = 0, locked_until = NULL, last_login_at = now()
-       WHERE id = $1`,
-      [account.id]
-    );
-    await client.query(
-      `INSERT INTO auth_sessions (user_account_id, token_hash, user_agent, ip_address, expires_at)
-       VALUES ($1,$2,$3,$4,$5)`,
-      [account.id, tokenHash(token), userAgent || null, ipAddress || null, expiresAt]
-    );
-    const updated = await findById(account.id, client);
-    await writeAuthAudit(client, updated, 'login', { username: updated.username });
-    return {
-      token,
-      expiresAt,
-      user: safeUser(updated)
-    };
+    return issueSession(client, account.id, {
+      method: 'password',
+      source: 'backstage',
+      ipAddress,
+      userAgent
+    });
   });
 }
 
@@ -217,8 +259,10 @@ module.exports = {
   AuthError,
   changePassword,
   getUserByToken,
+  issueSession,
   login,
   logout,
   safeUser,
+  tokenHash,
   writeAuthAudit
 };

@@ -93,6 +93,11 @@ Page({
   },
 
   submitProfile() {
+    const app = getApp();
+    if (!app.isLoggedIn()) {
+      app.requireLogin().catch(() => {});
+      return;
+    }
     const { form, serviceTypes, serviceIndex, liveOptions, liveIndex } = this.data;
     const serviceType = serviceTypes[serviceIndex];
     if (!form.name || !form.phone || !form.age || !form.experience || !serviceType) {
@@ -107,7 +112,7 @@ Page({
       serviceType,
       liveType: liveOptions[liveIndex]
     });
-    getApp().saveAyiProfile(profile);
+    app.saveAyiProfile(profile);
 
     wx.showToast({
       title: '资料已保存',

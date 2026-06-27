@@ -4,6 +4,10 @@ const { stores: localStores } = require('./data/stores');
 
 const BACKEND_BASE_URL = 'http://localhost:5177';
 const CUSTOMER_DEMAND_ACCESS_KEY = 'customerDemandAccessList';
+const MINIPROGRAM_AUTH_TOKEN_KEY = 'miniprogramAuthToken';
+const MINIPROGRAM_AUTH_USER_KEY = 'miniprogramAuthUser';
+const MINIPROGRAM_GUEST_KEY = 'miniprogramGuestMode';
+const LOGIN_REDIRECT_KEY = 'miniprogramLoginRedirect';
 const imageDisplayCache = {};
 const DEFAULT_COMPANY_PROFILE = {
   companyName: '',
@@ -231,6 +235,13 @@ App({
     serviceModules: [],
     banners: [],
     companyProfile: Object.assign({}, DEFAULT_COMPANY_PROFILE),
+    isLoggedIn: false,
+    isGuest: false,
+    accessToken: '',
+    currentUser: null,
+    currentIdentity: '',
+    authToken: '',
+    authUser: null,
     appointments: [],
     demands: [],
     applications: [],
@@ -240,7 +251,25 @@ App({
 
   onLaunch() {
     this.globalData.role = wx.getStorageSync('role') || '';
+    this.globalData.authToken = wx.getStorageSync(MINIPROGRAM_AUTH_TOKEN_KEY) || '';
+    this.globalData.accessToken = this.globalData.authToken;
+    this.globalData.authUser = wx.getStorageSync(MINIPROGRAM_AUTH_USER_KEY) || null;
+    this.globalData.currentUser = this.globalData.authUser;
+    this.globalData.currentIdentity = this.globalData.role || '';
+    this.globalData.isLoggedIn = Boolean(this.globalData.authToken);
+    this.globalData.isGuest = !this.globalData.isLoggedIn && wx.getStorageSync(MINIPROGRAM_GUEST_KEY) === '1';
     this.loadBackendData();
+  },
+
+  normalizeErrorMessage(error, fallback) {
+    const raw = error && error.message ? String(error.message) : '';
+    if (!raw) return fallback || '操作失败，请稍后重试';
+    if (raw.indexOf('Unknown auth endpoint') >= 0) return '登录服务暂时不可用，请稍后重试';
+    if (raw.indexOf('小程序登录尚未完成配置') >= 0 || raw.indexOf('WECHAT_NOT_CONFIGURED') >= 0) return '微信登录尚未完成配置，请暂时使用游客模式';
+    if (raw.indexOf('手机号授权失败') >= 0 || raw.indexOf('WECHAT_PHONE') >= 0) return '手机号授权失败';
+    if (raw.indexOf('ECONNREFUSED') >= 0 || raw.indexOf('request:fail') >= 0 || raw.indexOf('Network') >= 0) return '网络异常，请检查网络后重试';
+    if (/^\d{3}$/.test(raw) || raw.indexOf('404') >= 0 || raw.indexOf('{') === 0) return fallback || '登录服务暂时不可用，请稍后重试';
+    return raw;
   },
 
   requestBackend(path, method, data, headers) {
@@ -251,17 +280,260 @@ App({
         data: data || {},
         header: Object.assign({
           'content-type': 'application/json'
-        }, headers || {}),
+        }, this.globalData.authToken ? {
+          Authorization: `Bearer ${this.globalData.authToken}`
+        } : {}, headers || {}),
         success: (res) => {
           if (res.statusCode >= 200 && res.statusCode < 300) {
             resolve(res.data);
             return;
           }
-          reject(new Error(`后台接口异常 ${res.statusCode}`));
+          if (res.statusCode === 401 && this.globalData.authToken) {
+            this.clearAuth();
+          }
+          const message = res.data && (res.data.error || res.data.message)
+            ? (res.data.error || res.data.message)
+            : `后台接口异常 ${res.statusCode}`;
+          reject(new Error(this.normalizeErrorMessage(new Error(message), '登录服务暂时不可用，请稍后重试')));
         },
-        fail: reject
+        fail: (error) => reject(new Error(this.normalizeErrorMessage(error, '网络异常，请检查网络后重试')))
       });
     });
+  },
+
+  saveAuth(result) {
+    const token = result && result.token ? result.token : '';
+    const user = result && result.user ? result.user : null;
+    this.globalData.authToken = token;
+    this.globalData.accessToken = token;
+    this.globalData.authUser = user;
+    this.globalData.currentUser = user;
+    this.globalData.isLoggedIn = Boolean(token);
+    this.globalData.isGuest = false;
+    if (token) {
+      wx.setStorageSync(MINIPROGRAM_AUTH_TOKEN_KEY, token);
+    }
+    wx.removeStorageSync(MINIPROGRAM_GUEST_KEY);
+    if (user) {
+      wx.setStorageSync(MINIPROGRAM_AUTH_USER_KEY, user);
+      if (user.role === 'customer' || user.role === 'ayi') {
+        this.setRole(user.role);
+      }
+    }
+  },
+
+  clearAuth() {
+    this.globalData.authToken = '';
+    this.globalData.accessToken = '';
+    this.globalData.authUser = null;
+    this.globalData.currentUser = null;
+    this.globalData.isLoggedIn = false;
+    wx.removeStorageSync(MINIPROGRAM_AUTH_TOKEN_KEY);
+    wx.removeStorageSync(MINIPROGRAM_AUTH_USER_KEY);
+  },
+
+  enterGuestMode() {
+    this.clearAuth();
+    this.globalData.isGuest = true;
+    wx.setStorageSync(MINIPROGRAM_GUEST_KEY, '1');
+  },
+
+  isLoggedIn() {
+    return Boolean(this.globalData.authToken);
+  },
+
+  getCurrentPageUrl() {
+    const pages = getCurrentPages ? getCurrentPages() : [];
+    const page = pages[pages.length - 1];
+    if (!page || !page.route) return '/pages/home/home';
+    const options = page.options || {};
+    const query = Object.keys(options)
+      .map((key) => `${encodeURIComponent(key)}=${encodeURIComponent(options[key])}`)
+      .join('&');
+    return `/${page.route}${query ? `?${query}` : ''}`;
+  },
+
+  redirectToLogin(targetUrl) {
+    const url = targetUrl || this.getCurrentPageUrl();
+    wx.setStorageSync(LOGIN_REDIRECT_KEY, url);
+    wx.navigateTo({
+      url: `/pages/login/login?redirect=${encodeURIComponent(url)}`
+    });
+  },
+
+  resumeAfterLogin(fallbackUrl) {
+    const target = wx.getStorageSync(LOGIN_REDIRECT_KEY) || fallbackUrl || '/pages/home/home';
+    wx.removeStorageSync(LOGIN_REDIRECT_KEY);
+    const path = target.split('?')[0];
+    if (['/pages/home/home', '/pages/service/service', '/pages/stores/stores', '/pages/mine/mine'].includes(path)) {
+      wx.switchTab({ url: path });
+      return;
+    }
+    wx.navigateTo({
+      url: target,
+      fail: () => wx.switchTab({ url: '/pages/home/home' })
+    });
+  },
+
+  requireLogin(options) {
+    if (this.isLoggedIn()) return Promise.resolve(true);
+    const targetUrl = options && options.redirectUrl ? options.redirectUrl : this.getCurrentPageUrl();
+    return new Promise((resolve, reject) => {
+      wx.showModal({
+        title: '此功能需要登录',
+        content: '登录后可以继续当前操作。',
+        confirmText: '去登录',
+        cancelText: '暂不登录',
+        success: (res) => {
+          if (res.confirm) {
+            this.redirectToLogin(targetUrl);
+          }
+          const error = new Error('LOGIN_REQUIRED');
+          error.code = 'LOGIN_REQUIRED';
+          reject(error);
+        },
+        fail: () => {
+          const error = new Error('LOGIN_REQUIRED');
+          error.code = 'LOGIN_REQUIRED';
+          reject(error);
+        }
+      });
+    });
+  },
+
+  ensureWechatLogin() {
+    return new Promise((resolve, reject) => {
+      wx.login({
+        success: (res) => {
+          if (res.code) {
+            resolve(res.code);
+            return;
+          }
+          reject(new Error('微信登录失败，请稍后重试'));
+        },
+        fail: () => reject(new Error('微信登录失败，请稍后重试'))
+      });
+    });
+  },
+
+  loginWithWechat() {
+    return this.ensureWechatLogin()
+      .then((code) => this.requestBackend('auth/wechat-login', 'POST', {
+        code,
+        role: this.globalData.role || 'customer',
+        source: 'miniprogram'
+      }))
+      .then((result) => {
+        this.saveAuth(result);
+        return result;
+      })
+      .catch((error) => {
+        throw new Error(this.normalizeErrorMessage(error, '微信登录失败，请稍后重试'));
+      });
+  },
+
+  loginWithWechatPhone(phoneCode) {
+    if (!phoneCode) {
+      return Promise.reject(new Error('您已取消手机号授权'));
+    }
+    return this.ensureWechatLogin()
+      .then((loginCode) => this.requestBackend('auth/wechat-phone-login', 'POST', {
+        loginCode,
+        phoneCode,
+        role: this.globalData.role || 'customer',
+        source: 'miniprogram'
+      }))
+      .then((result) => {
+        this.saveAuth(result);
+        return result;
+      })
+      .catch((error) => {
+        const message = this.normalizeErrorMessage(error, '手机号授权失败');
+        if (message.indexOf('微信登录尚未完成配置') >= 0) {
+          throw new Error('手机号登录尚未完成配置，请暂时使用游客模式');
+        }
+        throw new Error(message);
+      });
+  },
+
+  fetchNotifications(options) {
+    if (!this.globalData.authToken || this.globalData.isGuest) {
+      return Promise.resolve({ items: [], total: 0 });
+    }
+    const query = [];
+    const filters = options || {};
+    Object.keys(filters).forEach((key) => {
+      if (filters[key] !== undefined && filters[key] !== '') {
+        query.push(`${encodeURIComponent(key)}=${encodeURIComponent(filters[key])}`);
+      }
+    });
+    return this.requestBackend(`notifications${query.length ? `?${query.join('&')}` : ''}`);
+  },
+
+  fetchUnreadCount() {
+    if (!this.globalData.authToken || this.globalData.isGuest) {
+      this.updateUnreadBadge(0);
+      return Promise.resolve(0);
+    }
+    return this.requestBackend('notifications/unread-count')
+      .then((data) => {
+        const count = Number(data.count || 0);
+        this.updateUnreadBadge(count);
+        return count;
+      })
+      .catch(() => {
+        this.updateUnreadBadge(0);
+        return 0;
+      });
+  },
+
+  updateUnreadBadge(count) {
+    const number = Number(count || 0);
+    if (number > 0) {
+      wx.setTabBarBadge({
+        index: 3,
+        text: number > 99 ? '99+' : String(number)
+      });
+      return;
+    }
+    wx.removeTabBarBadge({ index: 3 });
+  },
+
+  markNotificationRead(id) {
+    return this.requestBackend(`notifications/${id}/read`, 'PUT')
+      .then((result) => {
+        this.fetchUnreadCount();
+        return result;
+      });
+  },
+
+  markAllNotificationsRead() {
+    return this.requestBackend('notifications/read-all', 'PUT')
+      .then((result) => {
+        this.fetchUnreadCount();
+        return result;
+      });
+  },
+
+  requestNotificationSubscriptions(types) {
+    if (!wx.requestSubscribeMessage) return Promise.resolve({});
+    return this.requestBackend('notifications/subscription-config')
+      .then((data) => {
+        const wanted = Array.isArray(types) ? types : [];
+        const tmplIds = (data.templates || [])
+          .filter((item) => !wanted.length || wanted.includes(item.type))
+          .map((item) => item.templateId)
+          .filter(Boolean);
+        if (!tmplIds.length) return {};
+        return new Promise((resolve) => {
+          wx.requestSubscribeMessage({
+            tmplIds,
+            success: resolve,
+            fail: () => resolve({})
+          });
+        });
+      })
+      .catch(() => ({}));
   },
 
   getStoredCustomerDemandAccessList() {
@@ -367,10 +639,14 @@ App({
 
   setRole(role) {
     this.globalData.role = role;
+    this.globalData.currentIdentity = role;
     wx.setStorageSync('role', role);
   },
 
   addAppointment(appointment) {
+    if (!this.isLoggedIn()) {
+      return this.requireLogin();
+    }
     const record = Object.assign({
       id: Date.now(),
       status: '待联系',
@@ -381,6 +657,9 @@ App({
   },
 
   addDemand(demand) {
+    if (!this.isLoggedIn()) {
+      return this.requireLogin();
+    }
     const record = Object.assign({
       id: Date.now(),
       status: '待处理',
@@ -391,6 +670,7 @@ App({
       consultant: '',
       followNote: ''
     }, record)).then((result) => {
+      this.requestNotificationSubscriptions(['demand_status', 'appointment']);
       const saved = normalizeDemand(result.demand || record);
       this.saveCustomerDemandAccess(result.demandId || saved.id, result.accessToken);
       this.globalData.demands = [saved, ...this.globalData.demands.filter((item) => item.id !== record.id)];
@@ -406,6 +686,9 @@ App({
   },
 
   saveAyiProfile(profile) {
+    if (!this.isLoggedIn()) {
+      return this.requireLogin();
+    }
     this.globalData.ayiProfile = Object.assign({
       status: '待审核',
       updatedAt: new Date().toLocaleString()
@@ -419,12 +702,16 @@ App({
   },
 
   addApplication(application) {
+    if (!this.isLoggedIn()) {
+      return this.requireLogin();
+    }
     const record = Object.assign({
       id: Date.now(),
       status: '已申请',
       createdAt: new Date().toLocaleString()
     }, application);
     this.globalData.applications = [record, ...this.globalData.applications];
+    this.requestNotificationSubscriptions(['application_result']);
     this.requestBackend('applications', 'POST', record).catch(showBackendSyncFailedToast);
   }
 });
