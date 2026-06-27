@@ -108,17 +108,24 @@ const resourceConfigs = {
     table: 'appointments',
     required: ['customerName'],
     columns: {
+      demandId: 'demand_id',
+      ayiId: 'ayi_id',
       customerName: 'customer_name',
       phone: 'phone',
       ayiName: 'ayi_name',
       serviceType: 'service_type',
       date: 'date',
       address: 'address',
+      interviewMethod: 'interview_method',
+      interviewResult: 'interview_result',
+      nextStep: 'next_step',
       consultant: 'consultant',
       status: 'status',
+      statusUpdatedBy: 'status_updated_by',
+      statusUpdatedAt: 'status_updated_at',
       note: 'note'
     },
-    defaults: { status: '待联系' },
+    defaults: { status: '待安排' },
     orderBy: 'updated_at DESC, id DESC'
   },
   applications: {
@@ -266,7 +273,7 @@ function toNumber(value) {
 function normalizeValue(key, value) {
   if (['permissions', 'skills', 'tags'].includes(key)) return toArray(value);
   if (['visible', 'canStay', 'featured'].includes(key)) return toBoolean(value);
-  if (['age', 'experience', 'sort', 'demandId', 'orderId', 'storeId', 'staffCount', 'consultantCount', 'ayiCount', 'latitude', 'longitude', 'assignedOperatorId'].includes(key)) return toNumber(value);
+  if (['age', 'experience', 'sort', 'demandId', 'ayiId', 'orderId', 'storeId', 'staffCount', 'consultantCount', 'ayiCount', 'latitude', 'longitude', 'assignedOperatorId', 'statusUpdatedBy'].includes(key)) return toNumber(value);
   return value === undefined ? null : value;
 }
 

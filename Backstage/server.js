@@ -139,6 +139,78 @@ function auditLogsToCsv(rows) {
   return `\ufeff${lines.join('\r\n')}`;
 }
 
+const exportInfoTypes = {
+  demands: { resource: 'demands', label: '\u5ba2\u6237\u9700\u6c42', filename: '\u5ba2\u6237\u9700\u6c42' },
+  ayis: { resource: 'ayis', label: '\u963f\u59e8\u4fe1\u606f', filename: '\u963f\u59e8\u4fe1\u606f' },
+  appointments: { resource: 'appointments', label: '\u9762\u8bd5\u5b89\u6392', filename: '\u9762\u8bd5\u5b89\u6392' },
+  appointmentRecords: { resource: 'appointments', label: '\u9884\u7ea6\u8bb0\u5f55', filename: '\u9884\u7ea6\u8bb0\u5f55' }
+};
+
+function exportInfoQueryFromSearchParams(searchParams) {
+  return {
+    type: searchParams.get('type') || 'demands',
+    preset: searchParams.get('preset') || 'today',
+    startDate: searchParams.get('startDate') || '',
+    endDate: searchParams.get('endDate') || '',
+    status: searchParams.get('status') || '',
+    serviceType: searchParams.get('serviceType') || '',
+    store: searchParams.get('store') || '',
+    operator: searchParams.get('operator') || '',
+    interviewMethod: searchParams.get('interviewMethod') || '',
+    page: Number(searchParams.get('page') || 1),
+    pageSize: Math.min(Math.max(Number(searchParams.get('pageSize') || 20), 1), 100)
+  };
+}
+
+function dateOnly(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value).slice(0, 10);
+  return date.toISOString().slice(0, 10);
+}
+
+function exportInfoDateLabel(filters) {
+  if (!filters.startDate && !filters.endDate) return '\u5168\u90e8';
+  if (filters.startDate && filters.endDate) return `${filters.startDate}_\u81f3_${filters.endDate}`;
+  return filters.startDate || filters.endDate || '\u5168\u90e8';
+}
+
+function recordMatchesExportFilters(record, filters) {
+  const created = dateOnly(record.createdAt);
+  if (filters.startDate && created && created < filters.startDate) return false;
+  if (filters.endDate && created && created > filters.endDate) return false;
+  if (filters.status && record.status !== filters.status) return false;
+  if (filters.serviceType && record.serviceType !== filters.serviceType) return false;
+  if (filters.interviewMethod && record.interviewMethod !== filters.interviewMethod) return false;
+  if (filters.store) {
+    const storeText = String(record.storeName || record.storeId || record.district || record.address || '').toLowerCase();
+    if (!storeText.includes(String(filters.store).toLowerCase())) return false;
+  }
+  if (filters.operator) {
+    const operatorText = String(record.consultant || record.source || record.assignedOperatorName || '').toLowerCase();
+    if (!operatorText.includes(String(filters.operator).toLowerCase())) return false;
+  }
+  return true;
+}
+
+function exportInfoRowsToCsv(type, rows) {
+  const headersByType = {
+    demands: ['\u5ba2\u6237\u59d3\u540d', '\u624b\u673a\u53f7', '\u670d\u52a1\u7c7b\u578b', '\u5730\u5740', '\u9884\u7b97', '\u9700\u6c42\u72b6\u6001', '\u8d1f\u8d23\u4eba/\u987e\u95ee', '\u521b\u5efa\u65e5\u671f'],
+    ayis: ['\u963f\u59e8\u59d3\u540d', '\u624b\u673a\u53f7', '\u670d\u52a1\u7c7b\u578b', '\u72b6\u6001', '\u6240\u5c5e\u95e8\u5e97', '\u5f55\u5165\u6765\u6e90', '\u5f55\u5165\u65e5\u671f'],
+    appointments: ['\u5ba2\u6237\u59d3\u540d', '\u624b\u673a\u53f7', '\u9884\u7ea6\u963f\u59e8', '\u670d\u52a1\u7c7b\u578b', '\u9762\u8bd5\u65f6\u95f4', '\u9762\u8bd5\u65b9\u5f0f', '\u9762\u8bd5\u72b6\u6001', '\u9762\u8bd5\u7ed3\u679c', '\u4e0b\u4e00\u6b65', '\u521b\u5efa\u65e5\u671f'],
+    appointmentRecords: ['\u5ba2\u6237\u59d3\u540d', '\u624b\u673a\u53f7', '\u9884\u7ea6\u963f\u59e8', '\u670d\u52a1\u7c7b\u578b', '\u9762\u8bd5\u65f6\u95f4', '\u9762\u8bd5\u65b9\u5f0f', '\u9762\u8bd5\u72b6\u6001', '\u5907\u6ce8', '\u521b\u5efa\u65e5\u671f']
+  };
+  const rowValues = {
+    demands: (row) => [row.customerName, row.phone, row.serviceType, `${row.city || ''} ${row.address || ''}`.trim(), row.budget, row.status, row.assignedOperatorName || row.consultant, dateOnly(row.createdAt)],
+    ayis: (row) => [row.name, row.phone, row.serviceType, row.status, row.storeName || row.storeId || '', row.source, dateOnly(row.createdAt)],
+    appointments: (row) => [row.customerName, row.phone, row.ayiName, row.serviceType, row.date, row.interviewMethod, row.status, row.interviewResult, row.nextStep, dateOnly(row.createdAt)],
+    appointmentRecords: (row) => [row.customerName, row.phone, row.ayiName, row.serviceType, row.date, row.interviewMethod, row.status, row.note, dateOnly(row.createdAt)]
+  };
+  const headers = headersByType[type] || headersByType.demands;
+  const mapper = rowValues[type] || rowValues.demands;
+  const lines = [headers.map(csvSafeCell).join(',')].concat(rows.map((row) => mapper(row).map(csvSafeCell).join(',')));
+  return `\ufeff${lines.join('\r\n')}`;
+}
 function timestampForFilename() {
   const now = new Date();
   const date = now.toISOString().slice(0, 10);
@@ -553,7 +625,8 @@ async function handleApi(req, res) {
       return;
     }
     try {
-      send(res, 200, await backstageRepository.getDashboard());
+      const query = new URL(req.url, `http://${req.headers.host || `localhost:${PORT}`}`).searchParams;
+      send(res, 200, await backstageRepository.getDashboard(Object.fromEntries(query.entries())));
     } catch (error) {
       sendError(res, 503, 'Database unavailable', error.message);
     }
@@ -578,6 +651,54 @@ async function handleApi(req, res) {
       send(res, 200, await backstageRepository.listAuditLogs(filters));
     } catch (error) {
       sendError(res, 503, 'Database unavailable', error.message);
+    }
+    return;
+  }
+
+  if (resource === 'exportInfo' && req.method === 'GET') {
+    const authz = accessControl.canAccessResource(currentUser, 'exportInfo', req.method);
+    if (!authz.ok) {
+      send(res, authz.status, { ok: false, error: authz.message });
+      return;
+    }
+    try {
+      const query = new URL(req.url, `http://${req.headers.host || `localhost:${PORT}`}`).searchParams;
+      const filters = exportInfoQueryFromSearchParams(query);
+      const typeConfig = exportInfoTypes[filters.type];
+      if (!typeConfig) {
+        send(res, 400, { ok: false, error: '请选择导出对象' });
+        return;
+      }
+      const targetAuthz = accessControl.canAccessResource(currentUser, typeConfig.resource, 'GET');
+      if (!targetAuthz.ok) {
+        send(res, targetAuthz.status, { ok: false, error: targetAuthz.message || '您没有该导出权限' });
+        return;
+      }
+      const accessFilter = accessControl.listFilterForUser(currentUser, typeConfig.resource);
+      const records = accessFilter
+        ? await resourceRepository.listWhere(typeConfig.resource, accessFilter)
+        : await resourceRepository.list(typeConfig.resource);
+      const filtered = records.filter((record) => recordMatchesExportFilters(record, filters));
+      if (parts[2] === 'export') {
+        const limited = filtered.slice(0, 10000);
+        const filename = `${typeConfig.filename}_${filters.status || filters.interviewMethod || exportInfoDateLabel(filters)}.csv`;
+        sendCsv(res, filename, exportInfoRowsToCsv(filters.type, limited));
+        return;
+      }
+      const page = Math.max(Number(filters.page) || 1, 1);
+      const pageSize = Math.min(Math.max(Number(filters.pageSize) || 20, 1), 100);
+      const start = (page - 1) * pageSize;
+      send(res, 200, {
+        ok: true,
+        type: filters.type,
+        label: typeConfig.label,
+        total: filtered.length,
+        page,
+        pageSize,
+        items: filtered.slice(start, start + pageSize)
+      });
+    } catch (error) {
+      sendError(res, 503, '导出信息查询失败', error.message);
     }
     return;
   }
@@ -888,6 +1009,40 @@ async function handleApi(req, res) {
       send(res, 405, { error: 'Method not allowed' });
     } catch (error) {
       sendApiError(res, error, 'Demand matching failed');
+    }
+    return;
+  }
+
+  if (resource === 'appointments' && id && parts[3] === 'status' && req.method === 'PUT') {
+    const authz = accessControl.canAccessResource(currentUser, 'appointments', req.method);
+    if (!authz.ok) {
+      send(res, authz.status, { ok: false, error: authz.message });
+      return;
+    }
+    try {
+      const allowedStatuses = ['待安排', '待面试', '面试中', '已面试', '跟进中', '已完成', '已取消'];
+      const body = await readBody(req);
+      if (!allowedStatuses.includes(body.status)) {
+        send(res, 400, { ok: false, error: 'Invalid interview status' });
+        return;
+      }
+      const before = await resourceRepository.findById('appointments', id);
+      if (!before) {
+        send(res, 404, { ok: false, error: 'Record not found' });
+        return;
+      }
+      if (!accessControl.canAccessRecord(currentUser, 'appointments', before)) {
+        send(res, 403, { ok: false, error: 'Permission denied' });
+        return;
+      }
+      const record = await resourceRepository.update('appointments', id, {
+        status: body.status,
+        statusUpdatedBy: currentUser && currentUser.id ? Number(currentUser.id) : null,
+        statusUpdatedAt: new Date().toISOString()
+      }, getActor(req, currentUser));
+      send(res, 200, expandResourceImages(req, 'appointments', record));
+    } catch (error) {
+      sendError(res, error.status || 400, 'Update interview status failed', error.message);
     }
     return;
   }

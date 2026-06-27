@@ -3,6 +3,7 @@ const BACKSTAGE_RESOURCES = new Set([
   'ayis',
   'demands',
   'todos',
+  'exportInfo',
   'appointments',
   'applications',
   'orders',
@@ -17,6 +18,7 @@ const OPERATOR_RESOURCES = new Set([
   'ayis',
   'demands',
   'todos',
+  'exportInfo',
   'appointments',
   'applications',
   'orders',
@@ -49,6 +51,8 @@ const PERMISSION_ALIASES = {
   accountPermissions: 'accounts',
   auditLogs: 'auditLogs',
   audit_logs: 'auditLogs',
+  exportInfo: 'exportInfo',
+  exports: 'exportInfo',
   company: 'companyProfile',
   companyProfile: 'companyProfile',
   ayis: 'ayis',
@@ -168,6 +172,10 @@ function canAccessResource(user, resource, method) {
   }
 
   if (resource === 'auditLogs') {
+    return canAccessModule(user, resource);
+  }
+
+  if (resource === 'exportInfo') {
     return canAccessModule(user, resource);
   }
 

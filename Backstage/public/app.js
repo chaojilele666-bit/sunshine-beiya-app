@@ -139,6 +139,36 @@ const resources = {
       `状态：${item.status || '-'}`
     ]
   },
+  appointments: {
+    title: '面试安排',
+    desc: '面试记录从客户需求进入，只维护面试时间、方式、状态、结果和下一步安排。',
+    fields: [
+      ['demandId', '关联客户需求ID', 'number'],
+      ['ayiId', '关联阿姨ID', 'number'],
+      ['customerName', '客户姓名'],
+      ['phone', '手机号'],
+      ['ayiName', '预约阿姨'],
+      ['serviceType', '服务类型', 'select', ['育儿嫂', '月嫂', '住家保姆', '小时工', '老人陪护']],
+      ['date', '面试日期和时间'],
+      ['interviewMethod', '面试方式', 'select', ['到店面试', '上门面试', '视频面试', '电话沟通', '其他']],
+      ['address', '面试地点或线上说明'],
+      ['status', '面试状态', 'select', ['待安排', '待面试', '面试中', '已面试', '跟进中', '已完成', '已取消']],
+      ['interviewResult', '面试结果', 'textarea'],
+      ['nextStep', '下一步安排', 'textarea'],
+      ['consultant', '跟进顾问'],
+      ['note', '备注', 'textarea']
+    ],
+    summary: (item) => [
+      `${item.ayiName || '-'} / ${item.serviceType || '-'}`,
+      `${item.date || '-'} / ${item.interviewMethod || '-'} / ${item.address || '-'}`,
+      `状态：${item.status || '-'}`
+    ]
+  },
+  exportInfo: {
+    title: '导出信息',
+    desc: '按对象、日期和业务条件查询并导出当前结果。',
+    custom: 'exportInfo'
+  },
   applications: {
     title: '接单申请',
     desc: '阿姨看到客户需求后申请接单，后台审核和安排沟通。',
@@ -277,6 +307,11 @@ let expandedAccountRole = null;
 let currentModuleCategory = null;
 let currentModuleSearchKey = '';
 let currentModuleSearchQuery = '';
+let resourceDateFilters = {
+  demands: { preset: 'all', startDate: '', endDate: '' },
+  ayis: { preset: 'all', startDate: '', endDate: '' },
+  appointments: { preset: 'all', startDate: '', endDate: '' }
+};
 let auditLogFilters = {
   actor: '',
   role: '',
@@ -301,6 +336,34 @@ let todoStats = {};
 let todoTotal = 0;
 let todoTotalPages = 1;
 let assignableOperators = [];
+let exportInfoFilters = {
+  type: 'demands',
+  preset: 'today',
+  startDate: '',
+  endDate: '',
+  status: '',
+  serviceType: '',
+  store: '',
+  operator: '',
+  interviewMethod: '',
+  page: 1,
+  pageSize: 20
+};
+let exportInfoResult = null;
+let dashboardData = null;
+let dashboardFilters = {
+  preset: 'today',
+  startDate: '',
+  endDate: '',
+  metric: 'customersTotal',
+  compareMetric: 'effectiveOperations',
+  storeName: '',
+  status: '',
+  serviceType: '',
+  keyword: '',
+  page: 1,
+  pageSize: 20
+};
 
 const roleDisplayMap = {
   管理端: '管理端',
@@ -320,11 +383,14 @@ const routeToResourceMap = {
   dashboard: 'dashboard',
   accounts: 'accounts',
   'audit-logs': 'auditLogs',
+  exports: 'exportInfo',
   todos: 'todos',
   company: 'companyProfile',
   ayis: 'ayis',
   demands: 'demands',
   appointments: 'appointments',
+  'demands-list': 'demands',
+  'demands-interviews': 'appointments',
   applications: 'applications',
   orders: 'orders',
   dispatches: 'orderDispatches',
@@ -778,8 +844,8 @@ const currentUserLabel = document.querySelector('#currentUser');
 const backHomeBtn = document.querySelector('#backHomeBtn');
 
 const roleAccess = {
-  boss: ['dashboard', 'accounts', 'auditLogs', 'todos', 'companyProfile', 'ayis', 'demands', 'appointments', 'applications', 'orders', 'orderDispatches', 'stores', 'serviceModules', 'banners'],
-  operator: ['todos', 'ayis', 'demands', 'appointments', 'applications', 'orders', 'orderDispatches', 'stores', 'serviceModules', 'banners']
+  boss: ['dashboard', 'accounts', 'auditLogs', 'exportInfo', 'todos', 'companyProfile', 'ayis', 'demands', 'appointments', 'applications', 'orders', 'orderDispatches', 'stores', 'serviceModules', 'banners'],
+  operator: ['exportInfo', 'todos', 'ayis', 'demands', 'appointments', 'applications', 'orders', 'orderDispatches', 'stores', 'serviceModules', 'banners']
 };
 
 const demandCategories = [
@@ -835,6 +901,11 @@ const ayiCategories = [
     match: (item) => item.visible === false
   }
 ];
+
+const interviewStatuses = ['待安排', '待面试', '面试中', '已面试', '跟进中', '已完成', '已取消'];
+const unfinishedInterviewStatuses = ['待安排', '待面试', '面试中', '已面试', '跟进中'];
+let appointmentStatusFilter = 'all';
+let appointmentDemandFilter = '';
 
 const accountGroups = [
   {
@@ -920,6 +991,7 @@ function parseHashRoute() {
 function routeWithCategory(resource, key) {
   const route = resourceToRouteMap[resource] || resource;
   if (!key) return route;
+  if (resource === 'demands') return `demands-list?status=${encodeURIComponent(key)}`;
   const param = resource === 'demands' ? 'status' : 'category';
   return `${route}?${param}=${encodeURIComponent(key)}`;
 }
@@ -952,13 +1024,64 @@ function recordMatchesCategory(resource, category, item) {
   return true;
 }
 
+function localDateString(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function getDateRangeByPreset(preset) {
+  const today = new Date();
+  const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const end = new Date(start);
+  if (preset === 'today') return { startDate: localDateString(start), endDate: localDateString(end) };
+  if (preset === 'last7') {
+    start.setDate(start.getDate() - 6);
+    return { startDate: localDateString(start), endDate: localDateString(end) };
+  }
+  if (preset === 'last30') {
+    start.setDate(start.getDate() - 29);
+    return { startDate: localDateString(start), endDate: localDateString(end) };
+  }
+  if (preset === 'month') {
+    start.setDate(1);
+    return { startDate: localDateString(start), endDate: localDateString(end) };
+  }
+  return { startDate: '', endDate: '' };
+}
+
+function getResourceDateFilter(resource) {
+  return resourceDateFilters[resource] || { preset: 'all', startDate: '', endDate: '' };
+}
+
+function recordMatchesDateFilter(item, filter) {
+  if (!filter || filter.preset === 'all') return true;
+  const created = formatDateOnly(item.createdAt);
+  if (!created) return false;
+  if (filter.startDate && created < filter.startDate) return false;
+  if (filter.endDate && created > filter.endDate) return false;
+  return true;
+}
+
 function getFilteredCache() {
-  if (!currentModuleCategory) return cache;
-  return cache.filter((item) => recordMatchesCategory(currentResource, currentModuleCategory, item));
+  const categoryFiltered = currentModuleCategory
+    ? cache.filter((item) => recordMatchesCategory(currentResource, currentModuleCategory, item))
+    : cache;
+  if (!['demands', 'ayis', 'appointments'].includes(currentResource)) return categoryFiltered;
+  const dateFiltered = categoryFiltered.filter((item) => recordMatchesDateFilter(item, getResourceDateFilter(currentResource)));
+  const demandFiltered = currentResource === 'appointments' && appointmentDemandFilter
+    ? dateFiltered.filter((item) => String(item.demandId || '') === String(appointmentDemandFilter))
+    : dateFiltered;
+  if (currentResource !== 'appointments' || appointmentStatusFilter === 'all') return demandFiltered;
+  if (appointmentStatusFilter === 'unfinished') {
+    return demandFiltered.filter((item) => unfinishedInterviewStatuses.includes(item.status || ''));
+  }
+  return demandFiltered.filter((item) => (item.status || '') === appointmentStatusFilter);
 }
 
 function isSearchableCategoryResource(resource) {
-  return ['demands', 'ayis'].includes(resource);
+  return ['demands', 'ayis', 'appointments'].includes(resource);
 }
 
 function getSearchableRecordText(resource, item) {
@@ -980,6 +1103,23 @@ function getSearchableRecordText(resource, item) {
         item.storeId,
         item.featuredTitle
       ]
+    : resource === 'appointments'
+      ? [
+          item.customerName,
+          item.phone,
+          item.ayiName,
+          item.serviceType,
+          item.date,
+          item.address,
+          item.interviewMethod,
+          item.interviewResult,
+          item.nextStep,
+          item.consultant,
+          item.status,
+          item.note,
+          item.demandId,
+          item.ayiId
+        ]
     : [
         item.customerName,
         item.phone,
@@ -1158,8 +1298,8 @@ async function loadResource(resource = currentResource, options = {}) {
   closeEditor();
   markActiveRoute(currentRoute);
   if (meta.custom === 'dashboard') {
-    const dashboard = await api('dashboard');
-    renderDashboard(dashboard);
+    await loadDashboard();
+    renderDashboard(dashboardData || {});
     form.innerHTML = '<p class="muted">管理看板为管理端查看页，不需要在右侧编辑。</p>';
     formTitle.textContent = '看板说明';
     return;
@@ -1169,6 +1309,13 @@ async function loadResource(resource = currentResource, options = {}) {
     renderAuditLogs();
     form.innerHTML = '<p class="muted">\u64cd\u4f5c\u8bb0\u5f55\u4ec5\u7ba1\u7406\u7aef\u53ef\u89c1\uff0c\u8bb0\u5f55\u6765\u81ea audit_logs\u3002</p>';
     formTitle.textContent = '\u5b89\u5168\u8bf4\u660e';
+    return;
+  }
+  if (meta.custom === 'exportInfo') {
+    await loadExportInfo();
+    renderExportInfo();
+    form.innerHTML = '<p class="muted">导出信息只按当前权限范围查询和导出，不允许输入数据库表名、人员 ID 或技术状态枚举。</p>';
+    formTitle.textContent = '导出说明';
     return;
   }
   if (meta.custom === 'todos') {
@@ -1190,6 +1337,11 @@ async function loadResource(resource = currentResource, options = {}) {
   cache = resource === 'serviceModules' && getServiceModuleSectionByRoute(currentRoute)
     ? await api(getServiceModuleApiPath())
     : await api(resource);
+  if (resource === 'demands' && currentRoute === 'demands') {
+    document.querySelector('#addBtn').hidden = true;
+    renderDemandModuleHome();
+    return;
+  }
   if (categories && !selectedCategory) {
     document.querySelector('#addBtn').hidden = true;
     renderCategoryHome(resource);
@@ -1506,6 +1658,10 @@ async function renderRoute() {
   if (!currentUser || !roleAccess[currentUser.role]) return;
   const parsed = parseHashRoute();
   const route = parsed.route;
+  if (route === 'appointments') {
+    setRoute('demands-interviews');
+    return;
+  }
   if (route === 'company') {
     setRoute('company-services/common-info');
     return;
@@ -1600,7 +1756,243 @@ function closeEditor() {
   form.innerHTML = '';
 }
 
+function dashboardQueryString() {
+  const params = new URLSearchParams();
+  Object.entries(dashboardFilters).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') params.set(key, value);
+  });
+  return params.toString();
+}
+
+async function loadDashboard(nextFilters = {}) {
+  dashboardFilters = Object.assign({}, dashboardFilters, nextFilters);
+  const query = dashboardQueryString();
+  dashboardData = await api(`dashboard${query ? `?${query}` : ''}`);
+  if (dashboardData && dashboardData.range) {
+    dashboardFilters.preset = dashboardData.range.preset || dashboardFilters.preset;
+    dashboardFilters.startDate = dashboardData.range.startDate || dashboardFilters.startDate;
+    dashboardFilters.endDate = dashboardData.range.endDate || dashboardFilters.endDate;
+  }
+  return dashboardData;
+}
+
+function dashboardLabel(value, fallback = '-') {
+  return value === undefined || value === null || value === '' ? fallback : value;
+}
+
+function dashboardMetricLabel(metric) {
+  const labels = {
+    customersTotal: '\u5ba2\u6237\u603b\u6570',
+    ayisTotal: '\u963f\u59e8\u603b\u6570',
+    demandsTotal: '\u5ba2\u6237\u9700\u6c42\u603b\u6570',
+    todayCustomers: '\u4eca\u65e5\u65b0\u589e\u5ba2\u6237',
+    todayAyis: '\u4eca\u65e5\u65b0\u589e\u963f\u59e8',
+    rangeCustomers: '\u8303\u56f4\u65b0\u589e\u5ba2\u6237',
+    rangeAyis: '\u8303\u56f4\u65b0\u589e\u963f\u59e8',
+    ayiStatus: '\u963f\u59e8\u72b6\u6001\u6982\u89c8',
+    effectiveOperations: '\u6709\u6548\u64cd\u4f5c\u6570'
+  };
+  return labels[metric] || metric || '-';
+}
+
+function dashboardCompareLabel(metric) {
+  const labels = {
+    newCustomers: '\u65b0\u589e\u5ba2\u6237',
+    newAyis: '\u65b0\u589e\u963f\u59e8',
+    newDemands: '\u65b0\u589e\u9700\u6c42',
+    followUps: '\u8ddf\u8fdb\u8bb0\u5f55',
+    appointments: '\u9762\u8bd5\u5b89\u6392',
+    effectiveOperations: '\u6709\u6548\u64cd\u4f5c'
+  };
+  return labels[metric] || metric || '-';
+}
+
+function dashboardTrendKey(metric) {
+  if (metric === 'ayisTotal' || metric === 'todayAyis' || metric === 'rangeAyis' || metric === 'ayiStatus') return 'newAyis';
+  if (metric === 'demandsTotal') return 'newDemands';
+  if (metric === 'effectiveOperations') return 'effectiveOperations';
+  return 'newCustomers';
+}
+
+function renderDashboardDateFilters(data) {
+  const presets = [
+    ['today', '\u4eca\u65e5'],
+    ['yesterday', '\u6628\u65e5'],
+    ['last7', '\u8fd1 7 \u5929'],
+    ['last30', '\u8fd1 30 \u5929'],
+    ['month', '\u672c\u6708'],
+    ['lastMonth', '\u4e0a\u6708']
+  ];
+  const range = data.range || {};
+  const activePreset = dashboardFilters.preset || range.preset || 'today';
+  return `
+    <section class="dashboard-filter-panel">
+      <div class="dashboard-filter-head">
+        <div>
+          <h3>\u7edf\u4e00\u65e5\u671f\u7b5b\u9009</h3>
+          <p>\u7edf\u8ba1\u8303\u56f4\uff1a${escapeHtml(range.label || '\u4eca\u65e5')} \u00b7 ${escapeHtml(range.startDate || '-')} \u81f3 ${escapeHtml(range.endDate || '-')}</p>
+        </div>
+        <button type="button" data-action="dashboard-reset">\u91cd\u7f6e</button>
+      </div>
+      <div class="dashboard-date-actions">
+        ${presets.map(([key, label]) => `
+          <button type="button" class="${activePreset === key ? 'is-active' : ''}" data-action="dashboard-date-preset" data-preset="${key}">${label}</button>
+        `).join('')}
+        <label>\u5f00\u59cb\u65e5\u671f<input type="date" name="dashboardStartDate" value="${escapeHtml(dashboardFilters.startDate || range.startDate || '')}"></label>
+        <label>\u7ed3\u675f\u65e5\u671f<input type="date" name="dashboardEndDate" value="${escapeHtml(dashboardFilters.endDate || range.endDate || '')}"></label>
+        <button type="button" data-action="dashboard-apply-date">\u81ea\u5b9a\u4e49\u65e5\u671f</button>
+      </div>
+    </section>
+  `;
+}
+
+function renderDashboardTrendChart(rows, metric) {
+  const trendKey = dashboardTrendKey(metric);
+  const values = (rows || []).map((row) => Number(row[trendKey]) || 0);
+  const maxValue = Math.max(...values, 1);
+  const points = values.map((value, index) => {
+    const x = values.length <= 1 ? 50 : (index / (values.length - 1)) * 100;
+    const y = 92 - (value / maxValue) * 78;
+    return `${x.toFixed(2)},${y.toFixed(2)}`;
+  }).join(' ');
+  return `
+    <section class="dashboard-card dashboard-chart-card">
+      <div class="dashboard-card-head"><h3>\u6307\u6807\u8d8b\u52bf\u5206\u6790</h3><p>${escapeHtml(dashboardMetricLabel(metric))}</p></div>
+      ${(rows || []).length ? `
+        <svg class="dashboard-line-chart" viewBox="0 0 100 100" preserveAspectRatio="none" role="img">
+          <polyline points="${points}" fill="none" stroke="#1f8a70" stroke-width="3" vector-effect="non-scaling-stroke"></polyline>
+        </svg>
+        <div class="dashboard-trend-labels">
+          ${(rows || []).map((row) => `<span>${escapeHtml(row.date)}<strong>${Number(row[trendKey]) || 0}</strong></span>`).join('')}
+        </div>
+      ` : '<p class="muted">\u6682\u65e0\u8d8b\u52bf\u6570\u636e</p>'}
+    </section>
+  `;
+}
+
+function renderDashboardDistribution(data) {
+  const metric = data.activeMetric || dashboardFilters.metric;
+  let title = '\u6307\u6807\u6784\u6210\u5206\u6790';
+  let rows = data.distributions && data.distributions.demandStatuses;
+  let kind = 'status';
+  if (metric === 'ayisTotal' || metric === 'rangeAyis' || metric === 'todayAyis' || metric === 'ayiStatus') {
+    rows = data.distributions && data.distributions.ayiStatuses;
+    title = '\u963f\u59e8\u72b6\u6001\u5206\u5e03';
+  } else if (metric === 'customersTotal' || metric === 'rangeCustomers' || metric === 'todayCustomers') {
+    rows = data.distributions && data.distributions.serviceTypes;
+    title = '\u670d\u52a1\u7c7b\u578b\u6784\u6210';
+    kind = 'serviceType';
+  } else if (metric === 'demandsTotal') {
+    title = '\u9700\u6c42\u72b6\u6001\u5206\u5e03';
+  }
+  rows = rows || [];
+  const maxValue = Math.max(...rows.map((row) => Number(row.value) || 0), 1);
+  return `
+    <section class="dashboard-card">
+      <div class="dashboard-card-head"><h3>${title}</h3><p>\u70b9\u51fb\u5206\u7c7b\u540e\u660e\u7ec6\u8868\u8054\u52a8\u8fc7\u6ee4</p></div>
+      <div class="dashboard-bars">
+        ${rows.map((row) => `
+          <button type="button" class="dashboard-bar-row" data-action="dashboard-breakdown" data-kind="${kind}" data-value="${escapeHtml(row.name || '')}">
+            <span>${escapeHtml(row.name || '\u672a\u586b\u5199')}</span>
+            <i style="width:${Math.max(6, (Number(row.value) || 0) / maxValue * 100)}%"></i>
+            <strong>${Number(row.value) || 0}</strong>
+          </button>
+        `).join('') || '<p class="muted">\u6682\u65e0\u6784\u6210\u6570\u636e</p>'}
+      </div>
+    </section>
+  `;
+}
+
+function renderDashboardStoreComparison(data) {
+  const rows = data.storeComparison || [];
+  const maxValue = Math.max(...rows.map((row) => Number(row.value) || 0), 1);
+  const metrics = ['newCustomers', 'newAyis', 'newDemands', 'followUps', 'appointments', 'effectiveOperations'];
+  return `
+    <section class="dashboard-card dashboard-store-card">
+      <div class="dashboard-card-head"><h3>\u95e8\u5e97\u8fd0\u8425\u5bf9\u6bd4</h3><p>\u4e0e\u9876\u90e8\u65e5\u671f\u548c\u7edf\u8ba1\u53e3\u5f84\u4fdd\u6301\u4e00\u81f4</p></div>
+      <div class="dashboard-compare-actions">
+        ${metrics.map((item) => `<button type="button" class="${dashboardFilters.compareMetric === item ? 'is-active' : ''}" data-action="dashboard-compare" data-metric="${item}">${dashboardCompareLabel(item)}</button>`).join('')}
+      </div>
+      <div class="dashboard-bars">
+        ${rows.map((row) => `
+          <button type="button" class="dashboard-bar-row" data-action="dashboard-store" data-store="${escapeHtml(row.storeName || '')}">
+            <span>${escapeHtml(row.storeName || '\u672a\u5f52\u5c5e')}</span>
+            <i style="width:${Math.max(6, (Number(row.value) || 0) / maxValue * 100)}%"></i>
+            <strong>${Number(row.value) || 0}</strong>
+          </button>
+        `).join('') || '<p class="muted">\u5f53\u524d\u6761\u4ef6\u4e0b\u6682\u65e0\u95e8\u5e97\u5bf9\u6bd4\u6570\u636e</p>'}
+      </div>
+      ${dashboardFilters.storeName ? '<button type="button" class="secondary-action" data-action="dashboard-clear-store">\u67e5\u770b\u5168\u90e8\u95e8\u5e97</button>' : ''}
+    </section>
+  `;
+}
+
+function renderDashboardDetails(data) {
+  const details = data.details || { rows: [], total: 0, page: 1, pageSize: 20 };
+  const totalPages = Math.max(1, Math.ceil((Number(details.total) || 0) / (Number(details.pageSize) || 20)));
+  const isAyiMetric = ['ayiStatus', 'ayisTotal', 'todayAyis', 'rangeAyis'].includes(data.activeMetric);
+  const statusRows = (data.distributions && (isAyiMetric ? data.distributions.ayiStatuses : data.distributions.demandStatuses)) || [];
+  const serviceRows = (data.distributions && data.distributions.serviceTypes) || [];
+  return `
+    <section class="dashboard-card dashboard-detail-card">
+      <div class="dashboard-card-head"><h3>\u6570\u636e\u660e\u7ec6\u8868</h3><p>\u5f53\u524d\u6307\u6807\uff1a${escapeHtml(dashboardMetricLabel(data.activeMetric || dashboardFilters.metric))}${dashboardFilters.storeName ? ` \u00b7 \u95e8\u5e97\uff1a${escapeHtml(dashboardFilters.storeName)}` : ''}</p></div>
+      <div class="dashboard-detail-filters">
+        <select name="dashboardStatus"><option value="">\u5168\u90e8\u72b6\u6001</option>${statusRows.map((row) => `<option value="${escapeHtml(row.name || '')}" ${dashboardFilters.status === row.name ? 'selected' : ''}>${escapeHtml(row.name || '\u672a\u586b\u5199')}</option>`).join('')}</select>
+        <select name="dashboardServiceType"><option value="">\u5168\u90e8\u670d\u52a1\u7c7b\u578b</option>${serviceRows.map((row) => `<option value="${escapeHtml(row.name || '')}" ${dashboardFilters.serviceType === row.name ? 'selected' : ''}>${escapeHtml(row.name || '\u672a\u586b\u5199')}</option>`).join('')}</select>
+        <input type="search" name="dashboardKeyword" value="${escapeHtml(dashboardFilters.keyword || '')}" placeholder="\u641c\u7d22\u5ba2\u6237\u3001\u963f\u59e8\u3001\u624b\u673a\u6216\u64cd\u4f5c\u4eba">
+        <button type="button" data-action="dashboard-filter">\u67e5\u8be2</button>
+        <button type="button" data-action="dashboard-clear-filters">\u6e05\u7a7a\u7b5b\u9009</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>\u540d\u79f0</th><th>\u8054\u7cfb\u65b9\u5f0f</th><th>\u670d\u52a1/\u6a21\u5757</th><th>\u72b6\u6001</th><th>\u95e8\u5e97</th><th>\u5f55\u5165/\u8d1f\u8d23\u4eba</th><th>\u521b\u5efa\u65e5\u671f</th></tr></thead>
+          <tbody>
+            ${(details.rows || []).map((row) => `
+              <tr>
+                <td>${escapeHtml(dashboardLabel(row.name))}</td>
+                <td>${escapeHtml(dashboardLabel(row.phone))}</td>
+                <td>${escapeHtml(dashboardLabel(row.serviceType))}</td>
+                <td>${escapeHtml(dashboardLabel(row.status))}</td>
+                <td>${escapeHtml(dashboardLabel(row.storeName, '\u672a\u5f52\u5c5e'))}</td>
+                <td>${escapeHtml(dashboardLabel(row.operator))}</td>
+                <td>${escapeHtml(formatDateTime(row.createdAt))}</td>
+              </tr>
+            `).join('') || '<tr><td colspan="7">\u5f53\u524d\u6761\u4ef6\u4e0b\u6682\u65e0\u660e\u7ec6</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+      <div class="dashboard-pagination">
+        <span>\u5171 ${Number(details.total) || 0} \u6761 \u00b7 \u7b2c ${Number(details.page) || 1}/${totalPages} \u9875</span>
+        <button type="button" data-action="dashboard-prev" ${Number(details.page) <= 1 ? 'disabled' : ''}>\u4e0a\u4e00\u9875</button>
+        <button type="button" data-action="dashboard-next" ${Number(details.page) >= totalPages ? 'disabled' : ''}>\u4e0b\u4e00\u9875</button>
+      </div>
+    </section>
+  `;
+}
+
 function renderDashboard(data) {
+  const cards = (data.cards || []).map((card) => `
+    <button type="button" class="metric-card ${dashboardFilters.metric === card.key ? 'is-active' : ''}" data-action="dashboard-metric" data-metric="${escapeHtml(card.key || '')}">
+      <div class="metric-label">${escapeHtml(card.label)}</div>
+      <div class="metric-value">${escapeHtml(card.value)}</div>
+      <div class="metric-note">${escapeHtml(card.note || '')}</div>
+      <div class="metric-delta">${escapeHtml((card.delta && card.delta.text) || '')}</div>
+    </button>
+  `).join('');
+
+  list.innerHTML = `
+    ${renderDashboardDateFilters(data)}
+    <div class="metric-grid">${cards}</div>
+    <div class="dashboard-grid">
+      ${renderDashboardTrendChart(data.trends || [], data.activeMetric || dashboardFilters.metric)}
+      ${renderDashboardDistribution(data)}
+      ${renderDashboardStoreComparison(data)}
+      ${renderDashboardDetails(data)}
+    </div>
+  `;
+}
+
+function renderDashboardLegacy(data) {
   const cards = (data.cards || []).map((card) => `
     <article class="metric-card">
       <div class="metric-label">${escapeHtml(card.label)}</div>
@@ -1800,6 +2192,228 @@ async function exportAuditLogs() {
   URL.revokeObjectURL(url);
   await loadAuditLogs();
   renderAuditLogs();
+}
+
+const exportTypeOptions = [
+  ['demands', '客户需求'],
+  ['ayis', '阿姨信息'],
+  ['appointments', '面试安排'],
+  ['appointmentRecords', '预约记录']
+];
+
+function exportPresetRange(preset) {
+  const today = new Date();
+  const start = new Date(today);
+  const end = new Date(today);
+  if (preset === 'today') return { startDate: localDateString(start), endDate: localDateString(end) };
+  if (preset === 'last7') {
+    start.setDate(today.getDate() - 6);
+    return { startDate: localDateString(start), endDate: localDateString(end) };
+  }
+  if (preset === 'last30') {
+    start.setDate(today.getDate() - 29);
+    return { startDate: localDateString(start), endDate: localDateString(end) };
+  }
+  if (preset === 'month') {
+    start.setDate(1);
+    return { startDate: localDateString(start), endDate: localDateString(end) };
+  }
+  if (preset === 'lastMonth') {
+    start.setMonth(today.getMonth() - 1, 1);
+    end.setDate(0);
+    return { startDate: localDateString(start), endDate: localDateString(end) };
+  }
+  return { startDate: '', endDate: '' };
+}
+
+function buildExportInfoQuery(filters, extra = {}) {
+  const params = new URLSearchParams();
+  Object.entries(Object.assign({}, filters, extra)).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') params.set(key, value);
+  });
+  return params.toString();
+}
+
+async function loadExportInfo(next = {}) {
+  exportInfoFilters = Object.assign({}, exportInfoFilters, next);
+  const query = buildExportInfoQuery(exportInfoFilters);
+  exportInfoResult = await api(`exportInfo?${query}`);
+  return exportInfoResult;
+}
+
+function collectExportInfoFilters(page = 1) {
+  const type = list.querySelector('[name="exportType"]')?.value || exportInfoFilters.type || 'demands';
+  const preset = exportInfoFilters.preset || 'today';
+  const startDate = list.querySelector('[name="exportStartDate"]')?.value || '';
+  const endDate = list.querySelector('[name="exportEndDate"]')?.value || '';
+  return {
+    type,
+    preset,
+    startDate,
+    endDate,
+    status: list.querySelector('[name="exportStatus"]')?.value || '',
+    serviceType: list.querySelector('[name="exportServiceType"]')?.value || '',
+    store: list.querySelector('[name="exportStore"]')?.value || '',
+    operator: list.querySelector('[name="exportOperator"]')?.value || '',
+    interviewMethod: list.querySelector('[name="exportInterviewMethod"]')?.value || '',
+    page,
+    pageSize: Number(list.querySelector('[name="exportPageSize"]')?.value) || 20
+  };
+}
+
+function renderExportDynamicFilters(type) {
+  const demandStatuses = demandCategories.map((item) => item.label);
+  const ayiStatuses = ['已认证', '待审核', '已下架'];
+  const appointmentMethods = ['到店面试', '上门面试', '视频面试', '电话沟通', '其他'];
+  const serviceTypes = Array.from(new Set(cache.concat(exportInfoResult?.items || []).map((item) => item.serviceType).filter(Boolean)));
+  const statusOptions = type === 'ayis'
+    ? ayiStatuses
+    : type === 'appointments' || type === 'appointmentRecords'
+      ? interviewStatuses
+      : demandStatuses;
+  const methodFilter = type === 'appointments' || type === 'appointmentRecords'
+    ? `
+      <label>
+        <span>面试方式</span>
+        <select name="exportInterviewMethod">
+          <option value="">全部方式</option>
+          ${appointmentMethods.map((item) => `<option value="${escapeHtml(item)}" ${exportInfoFilters.interviewMethod === item ? 'selected' : ''}>${escapeHtml(item)}</option>`).join('')}
+        </select>
+      </label>
+    `
+    : '';
+  return `
+    <label>
+      <span>${type === 'ayis' ? '阿姨状态' : type === 'appointments' || type === 'appointmentRecords' ? '面试状态' : '需求状态'}</span>
+      <select name="exportStatus">
+        <option value="">全部状态</option>
+        ${statusOptions.map((item) => `<option value="${escapeHtml(item)}" ${exportInfoFilters.status === item ? 'selected' : ''}>${escapeHtml(item)}</option>`).join('')}
+      </select>
+    </label>
+    <label>
+      <span>服务类型</span>
+      <select name="exportServiceType">
+        <option value="">全部服务</option>
+        ${serviceTypes.map((item) => `<option value="${escapeHtml(item)}" ${exportInfoFilters.serviceType === item ? 'selected' : ''}>${escapeHtml(item)}</option>`).join('')}
+      </select>
+    </label>
+    ${methodFilter}
+    <label>
+      <span>所属门店</span>
+      <input name="exportStore" value="${escapeHtml(exportInfoFilters.store || '')}" placeholder="输入门店名称筛选" />
+    </label>
+    <label>
+      <span>${type === 'ayis' ? '录入人员' : '负责人'}</span>
+      <input name="exportOperator" value="${escapeHtml(exportInfoFilters.operator || '')}" placeholder="输入姓名筛选" />
+    </label>
+  `;
+}
+
+function renderExportInfo() {
+  const result = exportInfoResult || { items: [], total: 0, page: 1, pageSize: 20 };
+  const totalPages = Math.max(1, Math.ceil((Number(result.total) || 0) / (Number(result.pageSize) || 20)));
+  const typeLabel = exportTypeOptions.find(([key]) => key === exportInfoFilters.type)?.[1] || '客户需求';
+  const dateLabel = exportInfoFilters.startDate || exportInfoFilters.endDate
+    ? `${exportInfoFilters.startDate || '开始'} 至 ${exportInfoFilters.endDate || '结束'}`
+    : '全部';
+  const presetButtons = [
+    ['today', '今日'],
+    ['last7', '近7天'],
+    ['last30', '近30天'],
+    ['month', '本月'],
+    ['lastMonth', '上月'],
+    ['all', '全部']
+  ].map(([key, label]) => `<button type="button" class="${exportInfoFilters.preset === key ? 'is-active' : ''}" data-action="export-preset" data-preset="${key}">${label}</button>`).join('');
+  const rows = (result.items || []).map((item) => {
+    const title = item.customerName || item.name || item.ayiName || `记录 ${item.id}`;
+    const desc = [
+      item.phone,
+      item.serviceType,
+      item.status,
+      item.consultant || item.source || item.interviewMethod,
+      item.createdAt ? formatDateTime(item.createdAt) : ''
+    ].filter(Boolean).join(' / ');
+    return `<article class="record"><div><div class="record-title">${escapeHtml(title)}</div><div class="record-line">${escapeHtml(desc || '-')}</div></div></article>`;
+  }).join('') || '<p class="muted">当前条件下没有可导出的数据。</p>';
+
+  list.innerHTML = `
+    <section class="export-panel">
+      <div class="export-head">
+        <h3>导出信息</h3>
+        <p>使用中文对象和条件导出当前权限范围内的数据，不输入表名、ID 或技术枚举。</p>
+      </div>
+      <div class="audit-toolbar export-toolbar">
+        <label>
+          <span>导出对象</span>
+          <select name="exportType">
+            ${exportTypeOptions.map(([key, label]) => `<option value="${key}" ${exportInfoFilters.type === key ? 'selected' : ''}>${label}</option>`).join('')}
+          </select>
+        </label>
+        <label>
+          <span>开始日期</span>
+          <input type="date" name="exportStartDate" value="${escapeHtml(exportInfoFilters.startDate || '')}" />
+        </label>
+        <label>
+          <span>结束日期</span>
+          <input type="date" name="exportEndDate" value="${escapeHtml(exportInfoFilters.endDate || '')}" />
+        </label>
+        <label>
+          <span>每页数量</span>
+          <select name="exportPageSize">
+            ${[20, 50].map((size) => `<option value="${size}" ${Number(exportInfoFilters.pageSize) === size ? 'selected' : ''}>${size}</option>`).join('')}
+          </select>
+        </label>
+        <div class="export-preset-actions">${presetButtons}<button type="button" data-action="export-reset">重置</button></div>
+        ${renderExportDynamicFilters(exportInfoFilters.type)}
+        <div class="audit-actions">
+          <button type="button" data-action="export-query">查询</button>
+          <button type="button" class="audit-export" data-action="export-current">导出当前结果</button>
+        </div>
+        <p>导出对象：${escapeHtml(typeLabel)}；日期范围：${escapeHtml(dateLabel)}；当前结果：${Number(result.total) || 0} 条。</p>
+      </div>
+      <div class="audit-pager">
+        <button class="secondary" type="button" data-action="export-prev" ${Number(exportInfoFilters.page) <= 1 ? 'disabled' : ''}>上一页</button>
+        <span>${Number(exportInfoFilters.page) || 1} / ${totalPages}</span>
+        <button class="secondary" type="button" data-action="export-next" ${Number(exportInfoFilters.page) >= totalPages ? 'disabled' : ''}>下一页</button>
+      </div>
+      <div class="audit-list">${rows}</div>
+    </section>
+  `;
+}
+
+async function exportCurrentInfo() {
+  if (!exportInfoFilters.type) {
+    alert('请选择导出对象');
+    return;
+  }
+  if (exportInfoFilters.startDate && exportInfoFilters.endDate && exportInfoFilters.startDate > exportInfoFilters.endDate) {
+    alert('开始日期不能晚于结束日期');
+    return;
+  }
+  if (exportInfoResult && Number(exportInfoResult.total) === 0) {
+    alert('当前条件下没有可导出的数据');
+    return;
+  }
+  const query = buildExportInfoQuery(exportInfoFilters, { page: '', pageSize: '', limit: 10000 });
+  const response = await fetch(`/api/exportInfo/export?${query}`, {
+    headers: authToken ? { Authorization: `Bearer ${authToken}` } : {}
+  });
+  if (!response.ok) {
+    alert(response.status === 403 ? '您没有该导出权限' : '导出失败，请稍后重试');
+    return;
+  }
+  const blob = await response.blob();
+  const disposition = response.headers.get('Content-Disposition') || '';
+  const match = disposition.match(/filename\*=UTF-8''([^;]+)/);
+  const filename = match ? decodeURIComponent(match[1]) : `${exportTypeOptions.find(([key]) => key === exportInfoFilters.type)?.[1] || '导出信息'}_${localDateString(new Date())}.csv`;
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 }
 
 function formatDateTime(value) {
@@ -2024,6 +2638,85 @@ function renderAccountsList() {
   `;
 }
 
+function renderDemandModuleHome() {
+  const demandCount = cache.length;
+  list.innerHTML = `
+    <section class="category-home">
+      <div class="category-home-head">
+        <h3>\u5ba2\u6237\u9700\u6c42</h3>
+        <p>\u5ba2\u6237\u8d44\u6599\u548c\u9700\u6c42\u8be6\u60c5\u5728\u201c\u9700\u6c42\u5217\u8868\u201d\u7ef4\u62a4\uff1b\u9762\u8bd5\u65f6\u95f4\u3001\u65b9\u5f0f\u3001\u72b6\u6001\u3001\u7ed3\u679c\u548c\u4e0b\u4e00\u6b65\u5b89\u6392\u5728\u201c\u9762\u8bd5\u5b89\u6392\u201d\u7ef4\u62a4\u3002</p>
+      </div>
+      <div class="category-grid">
+        <button class="category-card" data-action="category-route" data-route="demands-list">
+          <span class="category-name">\u9700\u6c42\u5217\u8868</span>
+          <strong>${demandCount}</strong>
+          <small>\u6309\u9700\u6c42\u72b6\u6001\u3001\u65e5\u671f\u548c\u5173\u952e\u8bcd\u67e5\u770b\u5ba2\u6237\u9700\u6c42</small>
+          <em>\u8fdb\u5165\u9700\u6c42\u5217\u8868</em>
+        </button>
+        <button class="category-card" data-action="category-route" data-route="demands-interviews">
+          <span class="category-name">\u9762\u8bd5\u5b89\u6392</span>
+          <strong>\u8fdb\u5165</strong>
+          <small>\u7ba1\u7406\u5173\u8054\u9700\u6c42\u3001\u963f\u59e8\u3001\u9762\u8bd5\u65f6\u95f4\u3001\u72b6\u6001\u3001\u7ed3\u679c\u548c\u4e0b\u4e00\u6b65</small>
+          <em>\u8fdb\u5165\u9762\u8bd5\u5b89\u6392</em>
+        </button>
+      </div>
+    </section>
+  `;
+}
+function renderResourceDateToolbar(resource, count) {
+  if (!['demands', 'ayis', 'appointments'].includes(resource)) return '';
+  const filter = getResourceDateFilter(resource);
+  const labels = {
+    demands: '\u521b\u5efa\u65e5\u671f',
+    ayis: '\u5f55\u5165\u65e5\u671f',
+    appointments: '\u9762\u8bd5\u521b\u5efa\u65e5\u671f'
+  };
+  const presets = [
+    ['today', '\u4eca\u65e5'],
+    ['last7', '\u8fd17\u5929'],
+    ['last30', '\u8fd130\u5929'],
+    ['month', '\u672c\u6708'],
+    ['all', '\u5168\u90e8']
+  ];
+  return `
+    <div class="date-filter-toolbar">
+      <div>
+        <strong>${labels[resource] || '\u65e5\u671f\u7b5b\u9009'}</strong>
+        <span>${count} \u6761\u8bb0\u5f55</span>
+      </div>
+      <div class="date-filter-actions">
+        ${presets.map(([key, label]) => `<button type="button" class="${filter.preset === key ? 'is-active' : ''}" data-action="resource-date-preset" data-resource="${resource}" data-preset="${key}">${label}</button>`).join('')}
+        <label><span>\u5f00\u59cb\u65e5\u671f</span><input type="date" name="resourceStartDate" value="${escapeHtml(filter.startDate || '')}"></label>
+        <label><span>\u7ed3\u675f\u65e5\u671f</span><input type="date" name="resourceEndDate" value="${escapeHtml(filter.endDate || '')}"></label>
+        <button type="button" data-action="resource-date-custom" data-resource="${resource}">\u81ea\u5b9a\u4e49\u65e5\u671f</button>
+        <button type="button" data-action="resource-date-reset" data-resource="${resource}">\u91cd\u7f6e</button>
+      </div>
+    </div>
+  `;
+}
+function renderAppointmentStatusToolbar() {
+  if (currentResource !== 'appointments') return '';
+  const dateFiltered = cache
+    .filter((item) => recordMatchesDateFilter(item, getResourceDateFilter('appointments')))
+    .filter((item) => !appointmentDemandFilter || String(item.demandId || '') === String(appointmentDemandFilter));
+  const countFor = (status) => {
+    if (status === 'all') return dateFiltered.length;
+    if (status === 'unfinished') return dateFiltered.filter((item) => unfinishedInterviewStatuses.includes(item.status || '')).length;
+    return dateFiltered.filter((item) => (item.status || '') === status).length;
+  };
+  const statuses = [['all', '\u5168\u90e8'], ['unfinished', '\u672a\u5b8c\u6210']].concat(interviewStatuses.map((item) => [item, item]));
+  return `
+    <div class="interview-status-toolbar">
+      ${appointmentDemandFilter ? `<button type="button" class="is-active" data-action="clear-appointment-demand-filter"><span>\u9700\u6c42 ${escapeHtml(appointmentDemandFilter)}</span><strong>\u6e05\u9664</strong></button>` : ''}
+      ${statuses.map(([key, label]) => `
+        <button type="button" class="${appointmentStatusFilter === key ? 'is-active' : ''}" data-action="interview-status-filter" data-status="${escapeHtml(key)}">
+          <span>${escapeHtml(label)}</span>
+          <strong>${countFor(key)}</strong>
+        </button>
+      `).join('')}
+    </div>
+  `;
+}
 function renderCategoryHome(resource) {
   const meta = resources[resource];
   const categories = getCategoriesForResource(resource) || [];
@@ -2073,7 +2766,26 @@ function renderList() {
     : baseRecords;
   const searchPlaceholder = currentResource === 'ayis'
     ? '\u8f93\u5165\u59d3\u540d\u3001\u7535\u8bdd\u3001\u670d\u52a1\u7c7b\u578b\u6216\u72b6\u6001'
-    : '\u8f93\u5165\u5ba2\u6237\u3001\u7535\u8bdd\u3001\u5730\u5740\u3001\u670d\u52a1\u7c7b\u578b\u6216\u72b6\u6001';
+    : currentResource === 'appointments'
+      ? '输入客户、阿姨、电话、面试方式、状态或备注'
+      : '\u8f93\u5165\u5ba2\u6237\u3001\u7535\u8bdd\u3001\u5730\u5740\u3001\u670d\u52a1\u7c7b\u578b\u6216\u72b6\u6001';
+  const dateToolbar = renderResourceDateToolbar(currentResource, records.length);
+  const interviewToolbar = renderAppointmentStatusToolbar();
+  const demandSubHeader = currentResource === 'demands' && currentRoute === 'demands-list' ? `
+    <div class="category-list-header">
+      <button class="secondary" data-action="route-card" data-route="demands">\u8fd4\u56de\u5ba2\u6237\u9700\u6c42</button>
+      <button class="secondary" data-action="route-card" data-route="demands-interviews">\u9762\u8bd5\u5b89\u6392</button>
+      <div><strong>\u9700\u6c42\u5217\u8868</strong><span>\u5ba2\u6237\u57fa\u672c\u8d44\u6599\u548c\u9700\u6c42\u4e3b\u8bb0\u5f55\u5728\u6b64\u7ef4\u62a4</span></div>
+    </div>
+  ` : '';
+  const interviewSubHeader = currentResource === 'appointments' && currentRoute === 'demands-interviews' ? `
+    <div class="category-list-header">
+      <button class="secondary" data-action="route-card" data-route="demands">\u8fd4\u56de\u5ba2\u6237\u9700\u6c42</button>
+      <button class="secondary" data-action="route-card" data-route="demands-list">\u9700\u6c42\u5217\u8868</button>
+      ${appointmentDemandFilter ? `<button class="secondary" data-action="clear-appointment-demand-filter">\u67e5\u770b\u5168\u90e8\u9762\u8bd5</button>` : ''}
+      <div><strong>\u9762\u8bd5\u5b89\u6392</strong><span>\u53ea\u7ef4\u62a4\u9762\u8bd5\u4fe1\u606f\uff0c\u5ba2\u6237\u9700\u6c42\u6458\u8981\u53ea\u8bfb\u5c55\u793a</span></div>
+    </div>
+  ` : '';
   const categoryHeader = currentModuleCategory ? `
     <div class="category-list-header">
       <button class="secondary" data-action="category-back">\u8fd4\u56de\u5206\u7c7b</button>
@@ -2134,8 +2846,17 @@ function renderList() {
     const demandDetailButton = currentResource === 'demands'
       ? `<button data-action="demand-detail" data-id="${item.id}">详情/跟进</button>`
       : '';
+    const demandInterviewsButton = currentResource === 'demands'
+      ? `<button data-action="view-demand-appointments" data-id="${item.id}">查看面试安排</button><button data-action="new-demand-appointment" data-id="${item.id}">新增面试</button>`
+      : '';
     const demandMatchButton = currentResource === 'demands'
       ? `<button data-action="match-demand" data-id="${item.id}">推荐阿姨</button>`
+      : '';
+    const appointmentDemandButton = currentResource === 'appointments' && item.demandId
+      ? `<button data-action="open-linked-demand" data-id="${item.demandId}">查看关联需求</button>`
+      : '';
+    const appointmentStatusButton = currentResource === 'appointments'
+      ? `<button data-action="change-appointment-status" data-id="${item.id}">修改状态</button>`
       : '';
     const ayiAvailabilityButton = currentResource === 'ayis'
       ? `<button data-action="ayi-availability" data-id="${item.id}">档期/偏好</button>`
@@ -2155,12 +2876,18 @@ function renderList() {
         <div>
           <div class="record-title">${escapeHtml(title)}</div>
           ${lines}
+          ${['demands', 'ayis', 'appointments'].includes(currentResource) ? `<div class="record-line">${currentResource === 'ayis' ? '录入日期' : '创建日期'}：${escapeHtml(formatDateTime(item.createdAt))}</div>` : ''}
+          ${currentResource === 'demands' ? `<div class="record-line">最近更新：${escapeHtml(formatDateTime(item.updatedAt))} / 最近跟进：${escapeHtml(formatDateTime(item.lastFollowedUpAt))} / 下次跟进：${escapeHtml(formatDateTime(item.nextFollowUpAt))}</div>` : ''}
+          ${currentResource === 'appointments' ? `<div class="record-line">需求摘要：${escapeHtml(item.customerName || '-')} / ${escapeHtml(item.phone || '-')} / ${escapeHtml(item.serviceType || '-')}</div><div class="record-line">面试：${escapeHtml(item.date || '-')} / ${escapeHtml(item.interviewMethod || '-')} / ${escapeHtml(item.address || '-')}</div><div class="record-line">结果：${escapeHtml(item.interviewResult || '-')} / 下一步：${escapeHtml(item.nextStep || '-')}</div>` : ''}
           ${availabilityLines}
           ${badge}
         </div>
         <div class="record-actions">
           ${demandDetailButton}
+          ${demandInterviewsButton}
           ${demandMatchButton}
+          ${appointmentDemandButton}
+          ${appointmentStatusButton}
           ${ayiAvailabilityButton}
           <button data-action="edit" data-id="${item.id}">${editLabel}</button>
           <button class="delete" data-action="delete" data-id="${item.id}">删除</button>
@@ -2169,8 +2896,56 @@ function renderList() {
     `;
   }).join('') || `<p class="muted">${searchQuery ? '当前检索条件下暂无数据。' : (currentModuleCategory ? '当前分类暂无数据。' : '暂无数据，点击新增开始录入。')}</p>`;
 
-  list.innerHTML = companyFeatureHeader + serviceHeader + categoryHeader + rows;
+  list.innerHTML = companyFeatureHeader + serviceHeader + demandSubHeader + interviewSubHeader + dateToolbar + interviewToolbar + categoryHeader + rows;
 }
+
+function openDemandAppointmentEditor(demand) {
+  currentResource = 'appointments';
+  currentRoute = 'demands-interviews';
+  currentRecord = null;
+  form.dataset.mode = '';
+  renderForm({
+    demandId: demand.id,
+    customerName: demand.customerName || demand.name || '',
+    phone: demand.phone || '',
+    serviceType: demand.serviceType || '',
+    address: demand.address || '',
+    consultant: demand.consultant || demand.assignedOperatorName || '',
+    status: '待安排'
+  });
+  currentRecord = null;
+  formTitle.textContent = `新增面试：${demand.customerName || demand.name || `需求 ${demand.id}`}`;
+  editor.classList.add('is-open');
+  layout.classList.add('editor-open');
+  editor.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function openAppointmentStatusPanel(record) {
+  currentRecord = record;
+  form.dataset.mode = 'appointment-status';
+  form.dataset.appointmentId = record.id;
+  formTitle.textContent = `修改面试状态：${record.customerName || record.ayiName || `记录 ${record.id}`}`;
+  form.innerHTML = `
+    <div class="edit-state">
+      <strong>当前状态：</strong>${escapeHtml(record.status || '-')}
+      <div class="record-line">关联需求：${escapeHtml(record.customerName || '-')} / ${escapeHtml(record.serviceType || '-')}</div>
+    </div>
+    <div class="field">
+      <label>面试状态</label>
+      <select name="appointmentStatus">
+        ${interviewStatuses.map((status) => `<option value="${escapeHtml(status)}" ${record.status === status ? 'selected' : ''}>${escapeHtml(status)}</option>`).join('')}
+      </select>
+    </div>
+    <div class="form-actions">
+      <button type="button" data-action="save-appointment-status">保存状态</button>
+      <button type="button" class="secondary" id="clearBtn">取消</button>
+    </div>
+  `;
+  editor.classList.add('is-open');
+  layout.classList.add('editor-open');
+  editor.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
 function isCertifiedAyi(item) {
   return ['已认证', 'approved'].includes(item.status) && item.visible !== false;
 }
@@ -2593,6 +3368,150 @@ list.addEventListener('click', async (event) => {
     setRoute(currentRoute || 'home');
     return;
   }
+  if (button.dataset.action === 'resource-date-preset') {
+    const resource = button.dataset.resource || currentResource;
+    const preset = button.dataset.preset || 'all';
+    const range = getDateRangeByPreset(preset);
+    resourceDateFilters[resource] = Object.assign({}, resourceDateFilters[resource], {
+      preset,
+      startDate: range.startDate,
+      endDate: range.endDate
+    });
+    renderList();
+    return;
+  }
+  if (button.dataset.action === 'resource-date-custom') {
+    const resource = button.dataset.resource || currentResource;
+    const startDate = list.querySelector('[name="resourceStartDate"]')?.value || '';
+    const endDate = list.querySelector('[name="resourceEndDate"]')?.value || '';
+    if (!startDate || !endDate) {
+      alert('请选择开始日期和结束日期。');
+      return;
+    }
+    if (startDate > endDate) {
+      alert('开始日期不能晚于结束日期。');
+      return;
+    }
+    resourceDateFilters[resource] = { preset: 'custom', startDate, endDate };
+    renderList();
+    return;
+  }
+  if (button.dataset.action === 'resource-date-reset') {
+    const resource = button.dataset.resource || currentResource;
+    resourceDateFilters[resource] = { preset: 'all', startDate: '', endDate: '' };
+    renderList();
+    return;
+  }
+  if (button.dataset.action === 'interview-status-filter') {
+    appointmentStatusFilter = button.dataset.status || 'all';
+    renderList();
+    return;
+  }
+  if (button.dataset.action === 'dashboard-date-preset') {
+    await loadDashboard({ preset: button.dataset.preset || 'today', startDate: '', endDate: '', page: 1 });
+    renderDashboard(dashboardData || {});
+    return;
+  }
+  if (button.dataset.action === 'dashboard-apply-date') {
+    const startDate = list.querySelector('[name="dashboardStartDate"]')?.value || '';
+    const endDate = list.querySelector('[name="dashboardEndDate"]')?.value || '';
+    if (!startDate || !endDate) {
+      alert('\u8bf7\u9009\u62e9\u5f00\u59cb\u65e5\u671f\u548c\u7ed3\u675f\u65e5\u671f');
+      return;
+    }
+    if (startDate > endDate) {
+      alert('\u5f00\u59cb\u65e5\u671f\u4e0d\u80fd\u665a\u4e8e\u7ed3\u675f\u65e5\u671f');
+      return;
+    }
+    await loadDashboard({ preset: 'custom', startDate, endDate, page: 1 });
+    renderDashboard(dashboardData || {});
+    return;
+  }
+  if (button.dataset.action === 'dashboard-reset') {
+    dashboardFilters = {
+      preset: 'today',
+      startDate: '',
+      endDate: '',
+      metric: 'customersTotal',
+      compareMetric: 'effectiveOperations',
+      storeName: '',
+      status: '',
+      serviceType: '',
+      keyword: '',
+      page: 1,
+      pageSize: 20
+    };
+    await loadDashboard();
+    renderDashboard(dashboardData || {});
+    return;
+  }
+  if (button.dataset.action === 'dashboard-metric') {
+    const metric = button.dataset.metric || 'customersTotal';
+    const compareMap = {
+      customersTotal: 'newCustomers',
+      todayCustomers: 'newCustomers',
+      rangeCustomers: 'newCustomers',
+      ayisTotal: 'newAyis',
+      todayAyis: 'newAyis',
+      rangeAyis: 'newAyis',
+      demandsTotal: 'newDemands',
+      effectiveOperations: 'effectiveOperations',
+      ayiStatus: 'newAyis'
+    };
+    await loadDashboard({ metric, compareMetric: compareMap[metric] || dashboardFilters.compareMetric, page: 1 });
+    renderDashboard(dashboardData || {});
+    return;
+  }
+  if (button.dataset.action === 'dashboard-compare') {
+    await loadDashboard({ compareMetric: button.dataset.metric || 'effectiveOperations', page: 1 });
+    renderDashboard(dashboardData || {});
+    return;
+  }
+  if (button.dataset.action === 'dashboard-store') {
+    await loadDashboard({ storeName: button.dataset.store || '', page: 1 });
+    renderDashboard(dashboardData || {});
+    return;
+  }
+  if (button.dataset.action === 'dashboard-clear-store') {
+    await loadDashboard({ storeName: '', page: 1 });
+    renderDashboard(dashboardData || {});
+    return;
+  }
+  if (button.dataset.action === 'dashboard-breakdown') {
+    const next = { page: 1 };
+    if (button.dataset.kind === 'serviceType') next.serviceType = button.dataset.value || '';
+    else next.status = button.dataset.value || '';
+    await loadDashboard(next);
+    renderDashboard(dashboardData || {});
+    return;
+  }
+  if (button.dataset.action === 'dashboard-filter') {
+    await loadDashboard({
+      status: list.querySelector('[name="dashboardStatus"]')?.value || '',
+      serviceType: list.querySelector('[name="dashboardServiceType"]')?.value || '',
+      keyword: list.querySelector('[name="dashboardKeyword"]')?.value || '',
+      page: 1
+    });
+    renderDashboard(dashboardData || {});
+    return;
+  }
+  if (button.dataset.action === 'dashboard-clear-filters') {
+    await loadDashboard({ status: '', serviceType: '', keyword: '', page: 1 });
+    renderDashboard(dashboardData || {});
+    return;
+  }
+  if (button.dataset.action === 'dashboard-prev') {
+    await loadDashboard({ page: Math.max(1, Number(dashboardFilters.page) - 1) });
+    renderDashboard(dashboardData || {});
+    return;
+  }
+  if (button.dataset.action === 'dashboard-next') {
+    const details = dashboardData && dashboardData.details ? dashboardData.details : {};
+    const totalPages = Math.max(1, Math.ceil((Number(details.total) || 0) / (Number(details.pageSize) || 20)));
+    await loadDashboard({ page: Math.min(totalPages, Number(dashboardFilters.page) + 1) });
+    renderDashboard(dashboardData || {});
+    return;
+  }
   if (button.dataset.action === 'audit-export') {
     try {
       await exportAuditLogs();
@@ -2630,6 +3549,64 @@ list.addEventListener('click', async (event) => {
   if (button.dataset.action === 'audit-next') {
     await loadAuditLogs({ page: Math.min(auditLogTotalPages, Number(auditLogFilters.page) + 1) });
     renderAuditLogs();
+    return;
+  }
+  if (button.dataset.action === 'export-preset') {
+    const preset = button.dataset.preset || 'all';
+    const range = exportPresetRange(preset);
+    exportInfoFilters = Object.assign({}, exportInfoFilters, {
+      preset,
+      startDate: range.startDate,
+      endDate: range.endDate,
+      page: 1
+    });
+    await loadExportInfo();
+    renderExportInfo();
+    return;
+  }
+  if (button.dataset.action === 'export-query') {
+    const nextFilters = collectExportInfoFilters(1);
+    if (nextFilters.startDate && nextFilters.endDate && nextFilters.startDate > nextFilters.endDate) {
+      alert('开始日期不能晚于结束日期');
+      return;
+    }
+    await loadExportInfo(nextFilters);
+    renderExportInfo();
+    return;
+  }
+  if (button.dataset.action === 'export-reset') {
+    const range = exportPresetRange('today');
+    exportInfoFilters = {
+      type: 'demands',
+      preset: 'today',
+      startDate: range.startDate,
+      endDate: range.endDate,
+      status: '',
+      serviceType: '',
+      store: '',
+      operator: '',
+      interviewMethod: '',
+      page: 1,
+      pageSize: 20
+    };
+    await loadExportInfo();
+    renderExportInfo();
+    return;
+  }
+  if (button.dataset.action === 'export-current') {
+    await exportCurrentInfo();
+    return;
+  }
+  if (button.dataset.action === 'export-prev') {
+    await loadExportInfo({ page: Math.max(1, Number(exportInfoFilters.page) - 1) });
+    renderExportInfo();
+    return;
+  }
+  if (button.dataset.action === 'export-next') {
+    const total = exportInfoResult ? Number(exportInfoResult.total) || 0 : 0;
+    const totalPages = Math.max(1, Math.ceil(total / (Number(exportInfoFilters.pageSize) || 20)));
+    await loadExportInfo({ page: Math.min(totalPages, Number(exportInfoFilters.page) + 1) });
+    renderExportInfo();
     return;
   }
   if (button.dataset.action === 'todo-category') {
@@ -2708,6 +3685,47 @@ list.addEventListener('click', async (event) => {
     } catch (error) {
       alert(error.message || '加载客户详情失败');
     }
+    return;
+  }
+  if (button.dataset.action === 'view-demand-appointments') {
+    appointmentDemandFilter = String(id);
+    appointmentStatusFilter = 'all';
+    setRoute('demands-interviews');
+    return;
+  }
+  if (button.dataset.action === 'clear-appointment-demand-filter') {
+    appointmentDemandFilter = '';
+    renderList();
+    return;
+  }
+  if (button.dataset.action === 'new-demand-appointment') {
+    const record = cache.find((item) => item.id === id);
+    if (!record) {
+      alert('没有找到这条需求，请刷新后再试。');
+      return;
+    }
+    openDemandAppointmentEditor(record);
+    return;
+  }
+  if (button.dataset.action === 'open-linked-demand') {
+    try {
+      const demand = await api(`demands/${id}`);
+      currentResource = 'demands';
+      currentRoute = 'demands-list';
+      currentRecord = demand;
+      await openDemandDetailPanel(demand);
+    } catch (error) {
+      alert(error.message || '加载关联需求失败');
+    }
+    return;
+  }
+  if (button.dataset.action === 'change-appointment-status') {
+    const record = cache.find((item) => item.id === id);
+    if (!record) {
+      alert('没有找到这条面试记录，请刷新后再试。');
+      return;
+    }
+    openAppointmentStatusPanel(record);
     return;
   }
   if (button.dataset.action === 'ayi-availability') {
@@ -2804,6 +3822,36 @@ form.addEventListener('click', async (event) => {
     return;
   }
 
+  const appointmentStatusButton = event.target.closest('[data-action="save-appointment-status"]');
+  if (appointmentStatusButton) {
+    event.preventDefault();
+    if (!currentRecord) return;
+    const status = form.querySelector('[name="appointmentStatus"]')?.value || '';
+    if (!interviewStatuses.includes(status)) {
+      alert('请选择有效的面试状态。');
+      return;
+    }
+    appointmentStatusButton.disabled = true;
+    appointmentStatusButton.textContent = '保存中...';
+    try {
+      const updated = await api(`appointments/${currentRecord.id}/status`, {
+        method: 'PUT',
+        body: JSON.stringify({ status })
+      });
+      alert('面试状态已更新。');
+      const index = cache.findIndex((item) => item.id === currentRecord.id);
+      if (index >= 0) cache[index] = updated;
+      currentRecord = updated;
+      renderList();
+      openAppointmentStatusPanel(updated);
+    } catch (error) {
+      alert(error.message || '保存面试状态失败');
+      appointmentStatusButton.disabled = false;
+      appointmentStatusButton.textContent = '保存状态';
+    }
+    return;
+  }
+
   const expireButton = event.target.closest('[data-action="expire-match"]');
   if (expireButton) {
     event.preventDefault();
@@ -2837,6 +3885,22 @@ list.addEventListener('input', (event) => {
     nextInput.focus();
     const position = nextInput.value.length;
     nextInput.setSelectionRange(position, position);
+  }
+});
+
+list.addEventListener('change', (event) => {
+  const exportTypeSelect = event.target.closest('select[name="exportType"]');
+  if (exportTypeSelect) {
+    exportInfoFilters = Object.assign({}, exportInfoFilters, {
+      type: exportTypeSelect.value,
+      status: '',
+      serviceType: '',
+      store: '',
+      operator: '',
+      interviewMethod: '',
+      page: 1
+    });
+    renderExportInfo();
   }
 });
 
