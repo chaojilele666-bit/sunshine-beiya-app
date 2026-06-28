@@ -189,10 +189,11 @@ async function createBoss(password) {
     await step('改密前不能访问普通后台接口', async () => {
       const response = await request('GET', '/api/analytics/my', { token: createdAccount.tempToken });
       assert(response.status === 403, `status ${response.status}`);
+      assert(response.data.code === 'PASSWORD_CHANGE_REQUIRED', `code ${response.data.code}`);
       return 'blocked by PASSWORD_CHANGE_REQUIRED';
     });
 
-    await step('首次改密后临时密码失效', async () => {
+    await step('首次改密后临时密码和旧 token 失效', async () => {
       const nextPassword = `${TEST_PREFIX}New9!`;
       const change = await request('POST', '/api/auth/change-password', {
         token: createdAccount.tempToken,
@@ -203,12 +204,40 @@ async function createBoss(password) {
         }
       });
       assert(change.status === 200, `change status ${change.status}`);
+      const oldToken = await request('GET', '/api/auth/me', { token: createdAccount.tempToken });
+      assert(oldToken.status === 401, `old token status ${oldToken.status}`);
       const oldLogin = await request('POST', '/api/auth/login', {
         body: { identifier: createdAccount.phone, password: createdAccount.temporary_password }
       });
       assert(oldLogin.status === 401, `old temp login status ${oldLogin.status}`);
+      const newLogin = await request('POST', '/api/auth/login', {
+        body: { identifier: createdAccount.phone, password: nextPassword }
+      });
+      assert(newLogin.status === 200 && newLogin.data.user.mustChangePassword === false, `new login ${newLogin.status}`);
       createdAccount.password = nextPassword;
-      return 'temp rejected after change';
+      createdAccount.changedToken = newLogin.data.token;
+      return 'temp and old token rejected after change';
+    });
+
+    await step('普通个人信息修改密码后旧会话失效', async () => {
+      const nextPassword = `${TEST_PREFIX}Next9!`;
+      const change = await request('POST', '/api/auth/change-password', {
+        token: createdAccount.changedToken,
+        body: {
+          currentPassword: createdAccount.password,
+          newPassword: nextPassword,
+          confirmPassword: nextPassword
+        }
+      });
+      assert(change.status === 200, `change status ${change.status}`);
+      const oldToken = await request('GET', '/api/auth/me', { token: createdAccount.changedToken });
+      assert(oldToken.status === 401, `old token status ${oldToken.status}`);
+      const login = await request('POST', '/api/auth/login', {
+        body: { identifier: createdAccount.phone, password: nextPassword }
+      });
+      assert(login.status === 200, `new password login ${login.status}`);
+      createdAccount.password = nextPassword;
+      return 'normal password change invalidated old session';
     });
 
     await step('重置密码', async () => {
@@ -300,6 +329,16 @@ async function createBoss(password) {
       const app = fs.readFileSync(path.join(__dirname, '..', 'public', 'app.js'), 'utf8');
       assert(app.includes('记住手机号') && app.includes('忘记密码请联系管理员'), 'missing login hints');
       return 'login UI text present';
+    });
+
+    await step('首次改密页面和路由保护存在', async () => {
+      const app = fs.readFileSync(path.join(__dirname, '..', 'public', 'app.js'), 'utf8');
+      assert(app.includes('change-password'), 'missing forced password route');
+      assert(app.includes('首次登录，请设置新密码'), 'missing first password change title');
+      assert(app.includes("currentUser.mustChangePassword && getRouteFromHash() !== 'change-password'"), 'missing forced route guard');
+      assert(app.includes('首次登录需要先设置新密码'), 'missing friendly PASSWORD_CHANGE_REQUIRED message');
+      assert(!app.includes('Password change required'), 'raw English password error exposed in frontend');
+      return 'forced password UI guarded';
     });
 
     await step('账号列表不返回敏感字段', async () => {

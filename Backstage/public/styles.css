@@ -172,6 +172,51 @@ body.is-authed .login-view {
   color: #374151;
 }
 
+.forced-password-card {
+  padding: 18px;
+  border: 1px solid #f59e0b;
+  border-radius: 8px;
+  background: #fffbeb;
+}
+
+.forced-password-card h3 {
+  margin: 0 0 8px;
+}
+
+.forced-password-card p {
+  margin: 0;
+  color: #4b5563;
+}
+
+.form-section-title {
+  margin: 8px 0 0;
+  font-size: 16px;
+}
+
+.form-tip {
+  min-height: 20px;
+  margin: 0;
+  color: #b91c1c;
+  font-size: 13px;
+}
+
+body.must-change-password .tabs,
+body.must-change-password #refreshBtn,
+body.must-change-password #backHomeBtn,
+body.must-change-password #addBtn,
+body.must-change-password .api-link {
+  display: none !important;
+}
+
+body.must-change-password .topbar p {
+  display: none;
+}
+
+body.must-change-password .layout,
+body.must-change-password .layout.editor-open {
+  grid-template-columns: minmax(0, 1fr) 380px;
+}
+
 .v6-trend {
   display: grid;
   grid-auto-flow: column;

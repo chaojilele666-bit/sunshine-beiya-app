@@ -4328,11 +4328,18 @@ boot();
   let v6OneTimePassword = null;
   let v6ProfileData = null;
 
+  const legacyClearAuthV6 = clearAuth;
+  clearAuth = function clearAuthV6(message = '') {
+    document.body.classList.remove('must-change-password');
+    return legacyClearAuthV6(message);
+  };
+
   function friendlyErrorV6(status, payload, fallback = '账号数据加载失败，请刷新后重试') {
     const code = payload && payload.code;
     const text = payload && (payload.error || payload.message);
+    if (status === 401 && code === 'INVALID_CREDENTIALS') return '当前密码错误';
     if (status === 401) return '登录状态已失效，请重新登录';
-    if (status === 403) return code === 'PASSWORD_CHANGE_REQUIRED' ? '请先修改临时密码' : '您没有账号管理权限';
+    if (status === 403) return code === 'PASSWORD_CHANGE_REQUIRED' ? '首次登录需要先设置新密码' : '您没有账号管理权限';
     if (status === 404 && String(text || '').includes('Unknown auth endpoint')) return '后台服务尚未加载最新版本，请重启服务';
     if (status >= 500) return '后台服务暂时不可用，请稍后重试';
     return fallback;
@@ -4350,7 +4357,12 @@ boot();
       payload = null;
     }
     if (!response.ok) {
-      if (response.status === 401 && path !== 'auth/login') clearAuth('登录状态已失效，请重新登录');
+      if (response.status === 401 && !['auth/login', 'auth/change-password'].includes(path)) clearAuth('登录状态已失效，请重新登录');
+      if (response.status === 403 && payload && payload.code === 'PASSWORD_CHANGE_REQUIRED') {
+        if (currentUser) currentUser.mustChangePassword = true;
+        document.body.classList.add('must-change-password');
+        if (getRouteFromHash() !== 'change-password') setRoute('change-password');
+      }
       throw new Error(friendlyErrorV6(response.status, payload));
     }
     return payload;
@@ -4362,15 +4374,18 @@ boot();
   roleDisplayMap.store_manager = '店长';
   roleDisplayMap.store_staff = '店员';
   Object.assign(roleAccess, {
-    boss: ['dashboard', 'accounts', 'auditLogs', 'exportInfo', 'todos', 'companyProfile', 'ayis', 'demands', 'appointments', 'applications', 'orders', 'orderDispatches', 'stores', 'serviceModules', 'banners', 'profile'],
-    management: ['dashboard', 'accounts', 'auditLogs', 'exportInfo', 'todos', 'companyProfile', 'ayis', 'demands', 'appointments', 'applications', 'orders', 'orderDispatches', 'stores', 'serviceModules', 'banners', 'profile'],
-    operator: ['dashboard', 'accounts', 'exportInfo', 'todos', 'ayis', 'demands', 'appointments', 'applications', 'orders', 'orderDispatches', 'stores', 'serviceModules', 'banners', 'profile'],
-    store_manager: ['dashboard', 'accounts', 'todos', 'ayis', 'demands', 'appointments', 'applications', 'orders', 'orderDispatches', 'stores', 'profile'],
-    store_staff: ['dashboard', 'todos', 'ayis', 'demands', 'appointments', 'applications', 'orders', 'orderDispatches', 'stores', 'profile']
+    boss: ['dashboard', 'accounts', 'auditLogs', 'exportInfo', 'todos', 'companyProfile', 'ayis', 'demands', 'appointments', 'applications', 'orders', 'orderDispatches', 'stores', 'serviceModules', 'banners', 'profile', 'changePassword'],
+    management: ['dashboard', 'accounts', 'auditLogs', 'exportInfo', 'todos', 'companyProfile', 'ayis', 'demands', 'appointments', 'applications', 'orders', 'orderDispatches', 'stores', 'serviceModules', 'banners', 'profile', 'changePassword'],
+    operator: ['dashboard', 'accounts', 'exportInfo', 'todos', 'ayis', 'demands', 'appointments', 'applications', 'orders', 'orderDispatches', 'stores', 'serviceModules', 'banners', 'profile', 'changePassword'],
+    store_manager: ['dashboard', 'accounts', 'todos', 'ayis', 'demands', 'appointments', 'applications', 'orders', 'orderDispatches', 'stores', 'profile', 'changePassword'],
+    store_staff: ['dashboard', 'todos', 'ayis', 'demands', 'appointments', 'applications', 'orders', 'orderDispatches', 'stores', 'profile', 'changePassword']
   });
   resources.profile = { title: '个人信息', desc: '查看当前账号资料、权限、授权门店和我的工作数据。', custom: 'profile' };
+  resources.changePassword = { title: '首次登录，请设置新密码', desc: '您当前使用的是临时密码。设置新密码后才能进入后台。', custom: 'changePassword' };
   routeToResourceMap.profile = 'profile';
+  routeToResourceMap['change-password'] = 'changePassword';
   resourceToRouteMap.profile = 'profile';
+  resourceToRouteMap.changePassword = 'change-password';
 
   function setupV6Shell() {
     document.title = '北京阳光北亚家政后台';
@@ -4458,20 +4473,24 @@ boot();
   function applyAuthShellV6() {
     if (!currentUser || !roleAccess[currentUser.role]) {
       document.body.classList.remove('is-authed');
+      document.body.classList.remove('must-change-password');
       return;
     }
     document.body.classList.add('is-authed');
+    document.body.classList.toggle('must-change-password', Boolean(currentUser.mustChangePassword));
     const rawName = String(currentUser.name || '').trim();
     const rawUsername = String(currentUser.username || '').trim();
     const isPhoneLike = /^\d{7,}$/.test(rawUsername);
     const displayName = rawName.length >= 2
       ? rawName
       : (!isPhoneLike && rawUsername.length >= 2 ? rawUsername : (labelRoleV6(currentUser.role) === '管理' ? '后台管理员' : '后台员工'));
-    currentUserLabel.textContent = `${displayName} / ${labelRoleV6(currentUser.role)}`;
-    const allowed = new Set(getAllowedResources().concat('profile'));
+    currentUserLabel.textContent = currentUser.mustChangePassword
+      ? '首次登录，请设置新密码'
+      : `${displayName} / ${labelRoleV6(currentUser.role)}`;
+    const allowed = new Set(getAllowedResources().concat('profile', 'changePassword'));
     if (currentUser.mustChangePassword) {
       allowed.clear();
-      allowed.add('profile');
+      allowed.add('changePassword');
     }
     document.querySelectorAll('.tab').forEach((tab) => {
       tab.hidden = tab.dataset.route !== 'home' && !allowed.has(tab.dataset.resource);
@@ -4483,7 +4502,7 @@ boot();
   function getAllowedResourcesV6() {
     if (!currentUser) return [];
     const base = allowedResources.length ? allowedResources.filter((item) => resources[item]) : (roleAccess[currentUser.role] || []);
-    return Array.from(new Set(base.concat('profile')));
+    return Array.from(new Set(base.concat('profile', 'changePassword')));
   }
 
   getAllowedResources = getAllowedResourcesV6;
@@ -4515,7 +4534,7 @@ boot();
       }
       loginForm.querySelector('[name="password"]').value = '';
       applyAuthShell();
-      setRoute(currentUser.mustChangePassword ? 'profile' : 'home');
+      setRoute(currentUser.mustChangePassword ? 'change-password' : 'home');
     } catch (error) {
       loginTip.textContent = '手机号或密码错误';
     }
@@ -4523,6 +4542,26 @@ boot();
 
   const legacyLoadResource = loadResource;
   loadResource = async function loadResourceV6(resource = currentResource, options = {}) {
+    if (resource === 'changePassword') {
+      currentResource = 'changePassword';
+      currentRoute = 'change-password';
+      currentRecord = null;
+      closeEditor();
+      markActiveRoute('change-password');
+      sectionTitle.textContent = '首次登录，请设置新密码';
+      sectionDesc.textContent = '您当前使用的是临时密码。设置新密码后才能进入后台。';
+      document.querySelector('#addBtn').hidden = true;
+      list.innerHTML = `
+        <section class="forced-password-card">
+          <h3>首次登录，请设置新密码</h3>
+          <p>您当前使用的是临时密码。设置新密码后才能进入后台。</p>
+        </section>
+      `;
+      renderProfileFormV6(true);
+      editor.classList.add('is-open');
+      layout.classList.add('editor-open');
+      return;
+    }
     if (resource === 'dashboard') {
       currentResource = 'dashboard';
       currentRoute = 'dashboard';
@@ -4568,10 +4607,8 @@ boot();
       currentRecord = null;
       closeEditor();
       markActiveRoute('profile');
-      sectionTitle.textContent = currentUser && currentUser.mustChangePassword ? '首次修改密码' : '个人信息';
-      sectionDesc.textContent = currentUser && currentUser.mustChangePassword
-        ? '临时密码登录后必须先修改密码，改密前不能访问其他后台页面。'
-        : '查看本人资料、权限、授权门店和我的工作数据。';
+      sectionTitle.textContent = '个人信息';
+      sectionDesc.textContent = '查看本人资料、权限、授权门店和我的工作数据。';
       document.querySelector('#addBtn').hidden = true;
       await loadStoresV6();
       const [me, work] = await Promise.all([api('auth/me'), api('analytics/my')]);
@@ -4590,8 +4627,8 @@ boot();
   const legacyRenderRoute = renderRoute;
   renderRoute = async function renderRouteV6() {
     if (!currentUser || !roleAccess[currentUser.role]) return;
-    if (currentUser.mustChangePassword && getRouteFromHash() !== 'profile') {
-      setRoute('profile');
+    if (currentUser.mustChangePassword && getRouteFromHash() !== 'change-password') {
+      setRoute('change-password');
       return;
     }
     return legacyRenderRoute();
@@ -4809,19 +4846,53 @@ boot();
     `;
   }
 
-  function renderProfileFormV6() {
-    form.dataset.mode = currentUser?.mustChangePassword ? 'first-change-password' : 'profile';
-    formTitle.textContent = currentUser?.mustChangePassword ? '首次修改密码' : '个人操作';
+  function getCurrentUserPhoneV6() {
+    return String(currentUser?.phone || currentUser?.phoneMasked || currentUser?.phone_masked || '').replace(/\D/g, '');
+  }
+
+  function validatePasswordChangeV6(formData, isFirstChange) {
+    const currentPassword = String(formData.get('currentPassword') || '');
+    const newPassword = String(formData.get('newPassword') || '');
+    const confirmPassword = String(formData.get('confirmPassword') || '');
+    const phone = getCurrentUserPhoneV6();
+    const weakPasswords = new Set(['12345678', '123456789', '1234567890', 'password', 'password123', 'qwerty123', '11111111', '88888888', 'abcdefg1']);
+    if (!currentPassword) return isFirstChange ? '请输入当前临时密码' : '请输入当前密码';
+    if (newPassword.length < 8) return '新密码至少需要 8 位';
+    if (phone && newPassword === phone) return '新密码不能与手机号相同';
+    if (newPassword === currentPassword) return isFirstChange ? '新密码不能与临时密码相同' : '新密码不能与当前密码相同';
+    if (newPassword !== confirmPassword) return '两次输入的新密码不一致';
+    if (weakPasswords.has(newPassword.toLowerCase())) return '不允许使用明显弱密码';
+    return '';
+  }
+
+  function passwordChangeFailureMessageV6(error, isFirstChange) {
+    const message = String(error?.message || '');
+    if (message.includes('当前密码') || message.includes('Current password') || message.includes('INVALID_CREDENTIALS')) {
+      return isFirstChange ? '当前临时密码错误' : '当前密码错误';
+    }
+    if (message.includes('登录状态已失效')) return message;
+    if (message.includes('新密码') || message.includes('两次输入') || message.includes('弱密码')) return message;
+    return '密码修改失败，请稍后重试';
+  }
+
+  function renderProfileFormV6(forceChange = false) {
+    const isFirstChange = Boolean(forceChange || currentUser?.mustChangePassword);
+    form.dataset.mode = isFirstChange ? 'first-change-password' : 'profile';
+    formTitle.textContent = isFirstChange ? '首次登录，请设置新密码' : '个人操作';
     form.innerHTML = `
-      ${currentUser?.mustChangePassword ? '<p class="account-note">当前账号必须先修改临时密码，修改成功后请重新登录。</p>' : `
-        <div class="field"><label>姓名</label><input name="name" value="${escapeHtml(currentUser?.name || '')}"></div>
+      ${isFirstChange ? '<p class="account-note">您当前使用的是临时密码。设置新密码后才能进入后台。</p>' : `
+        <div class="field"><label for="profileName">姓名</label><input id="profileName" name="name" value="${escapeHtml(currentUser?.name || '')}"></div>
         <button type="submit">保存个人资料</button>
       `}
       <hr>
-      <div class="field"><label>当前密码</label><input name="currentPassword" type="password" autocomplete="current-password"></div>
-      <div class="field"><label>新密码</label><input name="newPassword" type="password" autocomplete="new-password"></div>
-      <div class="field"><label>确认新密码</label><input name="confirmPassword" type="password" autocomplete="new-password"></div>
-      <button type="button" data-action="profile-change-password">修改密码</button>
+      <h3 class="form-section-title">${isFirstChange ? '设置新密码' : '账号安全'}</h3>
+      ${isFirstChange ? '' : '<p class="muted">修改密码后当前会话会失效，请使用新密码重新登录。</p>'}
+      <div class="field"><label for="profileCurrentPassword">${isFirstChange ? '当前临时密码' : '当前密码'}</label><input id="profileCurrentPassword" name="currentPassword" type="password" autocomplete="current-password"></div>
+      <div class="field"><label for="profileNewPassword">新密码</label><input id="profileNewPassword" name="newPassword" type="password" autocomplete="new-password"></div>
+      <div class="field"><label for="profileConfirmPassword">确认新密码</label><input id="profileConfirmPassword" name="confirmPassword" type="password" autocomplete="new-password"></div>
+      <button type="button" data-action="profile-change-password">${isFirstChange ? '确认修改' : '修改密码'}</button>
+      ${isFirstChange ? '<button type="button" class="secondary" data-action="logout">退出登录</button>' : ''}
+      <p class="form-tip" data-role="password-tip"></p>
     `;
   }
 
@@ -4861,20 +4932,46 @@ boot();
   }, true);
 
   form.addEventListener('click', async (event) => {
+    const logoutButton = event.target.closest('button[data-action="logout"]');
+    if (logoutButton) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      try {
+        await api('auth/logout', { method: 'POST' });
+      } catch (error) {
+        // Local logout should still clear the browser state if the session already expired.
+      }
+      clearAuth('已退出，请重新登录。');
+      return;
+    }
     const button = event.target.closest('button[data-action="profile-change-password"]');
     if (!button) return;
     event.preventDefault();
     event.stopImmediatePropagation();
     const formData = new FormData(form);
-    await api('auth/change-password', {
-      method: 'POST',
-      body: JSON.stringify({
-        currentPassword: formData.get('currentPassword'),
-        newPassword: formData.get('newPassword'),
-        confirmPassword: formData.get('confirmPassword')
-      })
-    });
-    clearAuth('密码已修改，请重新登录。');
+    const isFirstChange = form.dataset.mode === 'first-change-password';
+    const tip = form.querySelector('[data-role="password-tip"]');
+    const validation = validatePasswordChangeV6(formData, isFirstChange);
+    if (validation) {
+      if (tip) tip.textContent = validation;
+      return;
+    }
+    button.disabled = true;
+    try {
+      await api('auth/change-password', {
+        method: 'POST',
+        body: JSON.stringify({
+          currentPassword: formData.get('currentPassword'),
+          newPassword: formData.get('newPassword'),
+          confirmPassword: formData.get('confirmPassword')
+        })
+      });
+      clearAuth('密码修改成功，请使用新密码重新登录。');
+    } catch (error) {
+      if (tip) tip.textContent = passwordChangeFailureMessageV6(error, isFirstChange);
+    } finally {
+      button.disabled = false;
+    }
   }, true);
 
   form.addEventListener('submit', async (event) => {
@@ -4913,4 +5010,10 @@ boot();
   }, true);
 
   setupV6Shell();
+  if (currentUser) {
+    applyAuthShell();
+    if (currentUser.mustChangePassword && getRouteFromHash() !== 'change-password') {
+      setRoute('change-password');
+    }
+  }
 })();
