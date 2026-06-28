@@ -768,7 +768,7 @@ async function handleAuth(req, res, parts, currentUser) {
         send(res, 200, { ok: true, account });
         return;
       }
-      if (operation === 'unlock') {
+      if (operation === 'unlock' || operation === 'enable') {
         const account = await authRepository.unlockStaffAccount(targetUserId, currentUser);
         send(res, 200, { ok: true, account });
         return;
@@ -783,7 +783,7 @@ async function handleAuth(req, res, parts, currentUser) {
       return;
     }
 
-    send(res, 404, { ok: false, error: '登录服务暂时不可用，请稍后重试' });
+    send(res, 404, { ok: false, error: '未知认证接口，请确认后台服务已重启到最新版本' });
   } catch (error) {
     if (error instanceof authRepository.AuthError || error.code) {
       sendAuthError(res, error);

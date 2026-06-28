@@ -4328,6 +4328,34 @@ boot();
   let v6OneTimePassword = null;
   let v6ProfileData = null;
 
+  function friendlyErrorV6(status, payload, fallback = '账号数据加载失败，请刷新后重试') {
+    const code = payload && payload.code;
+    const text = payload && (payload.error || payload.message);
+    if (status === 401) return '登录状态已失效，请重新登录';
+    if (status === 403) return code === 'PASSWORD_CHANGE_REQUIRED' ? '请先修改临时密码' : '您没有账号管理权限';
+    if (status === 404 && String(text || '').includes('Unknown auth endpoint')) return '后台服务尚未加载最新版本，请重启服务';
+    if (status >= 500) return '后台服务暂时不可用，请稍后重试';
+    return fallback;
+  }
+
+  api = async function apiV6(path, options) {
+    const headers = { 'Content-Type': 'application/json' };
+    if (authToken) headers.Authorization = `Bearer ${authToken}`;
+    const response = await fetch(`/api/${path}`, { headers, ...options });
+    const raw = response.status === 204 ? '' : await response.text();
+    let payload = null;
+    try {
+      payload = raw ? JSON.parse(raw) : null;
+    } catch (error) {
+      payload = null;
+    }
+    if (!response.ok) {
+      if (response.status === 401 && path !== 'auth/login') clearAuth('登录状态已失效，请重新登录');
+      throw new Error(friendlyErrorV6(response.status, payload));
+    }
+    return payload;
+  };
+
   roleDisplayMap.boss = '管理';
   roleDisplayMap.management = '管理';
   roleDisplayMap.operator = '运营';
@@ -4433,7 +4461,13 @@ boot();
       return;
     }
     document.body.classList.add('is-authed');
-    currentUserLabel.textContent = `${currentUser.name || currentUser.username || currentUser.phoneMasked || '-'} / ${labelRoleV6(currentUser.role)}`;
+    const rawName = String(currentUser.name || '').trim();
+    const rawUsername = String(currentUser.username || '').trim();
+    const isPhoneLike = /^\d{7,}$/.test(rawUsername);
+    const displayName = rawName.length >= 2
+      ? rawName
+      : (!isPhoneLike && rawUsername.length >= 2 ? rawUsername : (labelRoleV6(currentUser.role) === '管理' ? '后台管理员' : '后台员工'));
+    currentUserLabel.textContent = `${displayName} / ${labelRoleV6(currentUser.role)}`;
     const allowed = new Set(getAllowedResources().concat('profile'));
     if (currentUser.mustChangePassword) {
       allowed.clear();
@@ -4513,11 +4547,17 @@ boot();
       sectionTitle.textContent = '账号与权限';
       sectionDesc.textContent = '创建员工账号、分配模块权限、管理状态和会话。';
       document.querySelector('#addBtn').hidden = false;
-      await loadStoresV6();
-      const result = await api('auth/staff-accounts');
-      v6StaffAccounts = result.accounts || [];
-      cache = v6StaffAccounts;
-      renderAccountsList();
+      try {
+        await loadStoresV6();
+        const result = await api('auth/staff-accounts');
+        v6StaffAccounts = result.accounts || [];
+        cache = v6StaffAccounts;
+        renderAccountsList();
+      } catch (error) {
+        v6StaffAccounts = [];
+        cache = [];
+        list.innerHTML = `<section class="account-note">${escapeHtml(error.message || '账号数据加载失败，请刷新后重试')}</section>`;
+      }
       form.innerHTML = '<p class="muted">创建账号后临时密码只显示一次；关闭提示后不能再次查看。</p>';
       formTitle.textContent = '账号操作';
       return;
