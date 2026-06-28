@@ -1,6 +1,7 @@
 ﻿const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const db = require('../db');
+const accessControl = require('../accessControl');
 
 const SESSION_TTL_HOURS = Number(process.env.AUTH_SESSION_TTL_HOURS || 8);
 const MAX_FAILED_LOGINS = Number(process.env.AUTH_MAX_FAILED_LOGINS || 5);
@@ -61,7 +62,8 @@ function maskPhone(value) {
 
 function normalizeRole(value) {
   const role = String(value || '').trim();
-  if (role === 'boss' || role === 'operator') return role;
+  if (role === 'management') return 'boss';
+  if (['boss', 'operator', 'store_manager', 'store_staff'].includes(role)) return role;
   throw new AuthError('INVALID_ROLE', 'Invalid backstage role', 400);
 }
 
@@ -79,6 +81,12 @@ function normalizePermissions(value) {
   if (Array.isArray(value)) return value.map(String).map((item) => item.trim()).filter(Boolean);
   if (value === undefined || value === null || value === '') return [];
   return String(value).split(',').map((item) => item.trim()).filter(Boolean);
+}
+
+function normalizeStoreIds(value) {
+  if (Array.isArray(value)) return value.map(Number).filter((id) => Number.isFinite(id));
+  if (value === undefined || value === null || value === '') return [];
+  return String(value).split(',').map((item) => Number(item.trim())).filter((id) => Number.isFinite(id));
 }
 
 function randomChar(chars) {
@@ -165,6 +173,7 @@ function safeUser(row) {
       name: row.store_name || ''
     } : null,
     storeId: row.store_id || null,
+    storeScopeIds: Array.isArray(row.store_scope_ids) ? row.store_scope_ids.map(Number) : [],
     organizationType: row.organization_type || 'backstage',
     mustChangePassword: Boolean(row.must_change_password),
     sessionVersion: Number(row.session_version || 1),
@@ -222,7 +231,7 @@ async function findBackstageByIdentifier(identifier, client = db) {
          ON u.related_profile_type = 'backstage_accounts'
         AND u.related_profile_id = ba.id::text
        WHERE (u.phone = $1 OR ba.phone = $1)
-         AND u.role IN ('operator', 'boss')
+         AND u.role IN ('operator', 'boss', 'management', 'store_manager', 'store_staff')
        ORDER BY CASE WHEN u.phone = $1 THEN 0 ELSE 1 END
        LIMIT 1`,
       [value]
@@ -234,7 +243,7 @@ async function findBackstageByIdentifier(identifier, client = db) {
     `SELECT *
      FROM user_accounts
      WHERE username = $1
-       AND role IN ('operator', 'boss')
+       AND role IN ('operator', 'boss', 'management', 'store_manager', 'store_staff')
      LIMIT 1`,
     [value]
   );
@@ -256,12 +265,18 @@ async function findById(id, client = db) {
             COALESCE(ba.password_changed_at, u.password_changed_at) AS password_changed_at,
             COALESCE(ba.last_login_ip, u.last_login_ip) AS last_login_ip,
             COALESCE(ba.session_version, u.session_version) AS backstage_session_version,
+            COALESCE(scopes.store_scope_ids, ARRAY[]::integer[]) AS store_scope_ids,
             s.name AS store_name
      FROM user_accounts u
      LEFT JOIN backstage_accounts ba
        ON u.related_profile_type = 'backstage_accounts'
       AND u.related_profile_id = ba.id::text
      LEFT JOIN stores s ON s.id = ba.store_id
+     LEFT JOIN (
+       SELECT account_id, array_agg(store_id ORDER BY store_id) AS store_scope_ids
+       FROM account_store_scopes
+       GROUP BY account_id
+     ) scopes ON scopes.account_id = u.id
      WHERE u.id = $1`,
     [Number(id)]
   );
@@ -366,7 +381,7 @@ async function login({ identifier, password, ipAddress, userAgent }) {
     throw new AuthError('ACCOUNT_NOT_FOUND', 'Phone or password is incorrect', 401);
   }
 
-  if (!['operator', 'boss'].includes(account.role)) {
+  if (!accessControl.isBackstageRole(account)) {
     throw new AuthError('INVALID_CREDENTIALS', 'Phone or password is incorrect', 401);
   }
 
@@ -436,6 +451,7 @@ async function getUserByToken(token) {
             COALESCE(ba.password_changed_at, u.password_changed_at) AS password_changed_at,
             COALESCE(ba.last_login_ip, u.last_login_ip) AS last_login_ip,
             COALESCE(ba.session_version, u.session_version) AS session_version,
+            COALESCE(scopes.store_scope_ids, ARRAY[]::integer[]) AS store_scope_ids,
             st.name AS store_name
      FROM auth_sessions s
      JOIN user_accounts u ON u.id = s.user_account_id
@@ -443,6 +459,11 @@ async function getUserByToken(token) {
        ON u.related_profile_type = 'backstage_accounts'
       AND u.related_profile_id = ba.id::text
      LEFT JOIN stores st ON st.id = ba.store_id
+     LEFT JOIN (
+       SELECT account_id, array_agg(store_id ORDER BY store_id) AS store_scope_ids
+       FROM account_store_scopes
+       GROUP BY account_id
+     ) scopes ON scopes.account_id = u.id
      WHERE s.token_hash = $1
        AND s.revoked_at IS NULL
        AND s.expires_at > now()
@@ -479,6 +500,7 @@ function staffAccountResponse(row, temporaryPassword) {
     phone_masked: maskPhone(row.phone),
     role: row.role,
     store: row.store_id ? { id: row.store_id, name: row.store_name || '' } : null,
+    store_scope_ids: Array.isArray(row.store_scope_ids) ? row.store_scope_ids.map(Number) : [],
     organization_type: row.organization_type || 'backstage',
     permissions: Array.isArray(row.backstage_permissions) ? row.backstage_permissions : [],
     must_change_password: Boolean(row.must_change_password),
@@ -507,9 +529,20 @@ async function createStaffAccount(payload = {}, actor = {}) {
   const phone = assertPhone(payload.phone);
   const role = normalizeRole(payload.role);
   const accountStatus = normalizeAccountStatus(payload.accountStatus || payload.account_status || payload.status || 'active');
-  const organizationType = String(payload.organizationType || payload.organization_type || 'backstage').trim() || 'backstage';
+  const scopeValue = String(payload.scope || payload.dataScope || '').trim();
+  const organizationType = scopeValue === 'all'
+    ? 'headquarters'
+    : String(payload.organizationType || payload.organization_type || 'backstage').trim() || 'backstage';
   const storeId = payload.storeId || payload.store_id ? Number(payload.storeId || payload.store_id) : null;
-  const permissions = normalizePermissions(payload.permissions);
+  const requestedScopeIds = normalizeStoreIds(payload.storeScopeIds || payload.store_scope_ids || payload.storeIds || payload.store_ids);
+  const storeScopeIds = Array.from(new Set((storeId ? [storeId] : []).concat(requestedScopeIds)));
+  const permissions = accessControl.normalizePermissionList(normalizePermissions(payload.permissions));
+  accessControl.validateAccountCreate(actor, Object.assign({}, payload, {
+    role,
+    storeId,
+    storeScopeIds,
+    permissions
+  }));
   const temporaryPassword = generateTemporaryPassword(phone);
   const passwordHash = await bcrypt.hash(temporaryPassword, 12);
 
@@ -543,21 +576,33 @@ async function createStaffAccount(payload = {}, actor = {}) {
       [phone, phone, passwordHash, role, String(backstage.rows[0].id), status]
     );
     const created = await findById(user.rows[0].id, client);
+    for (const scopedStoreId of storeScopeIds) {
+      await client.query(
+        `INSERT INTO account_store_scopes (account_id, store_id, created_by)
+         VALUES ($1,$2,$3)
+         ON CONFLICT (account_id, store_id) DO NOTHING`,
+        [created.id, scopedStoreId, actor && actor.id ? Number(actor.id) : null]
+      );
+    }
     await writeAuthAudit(client, actor || null, 'create_staff_account', {
       targetUserId: created.id,
       phoneMasked: maskPhone(phone),
       role,
-      accountStatus
+      accountStatus,
+      storeScopeIds
     });
-    return staffAccountResponse(created, temporaryPassword);
+    return staffAccountResponse(await findById(created.id, client), temporaryPassword);
   });
 }
 
 async function resetStaffPassword(targetUserId, actor = {}) {
   return db.transaction(async (client) => {
     const account = await findById(targetUserId, client);
-    if (!account || !['operator', 'boss'].includes(account.role)) {
+    if (!account || !accessControl.isBackstageRole(account)) {
       throw new AuthError('ACCOUNT_NOT_FOUND', 'Staff account does not exist', 404);
+    }
+    if (!accessControl.canManageAccountRecord(actor, account)) {
+      throw new AuthError('FORBIDDEN', 'Permission denied', 403);
     }
     const temporaryPassword = generateTemporaryPassword(account.phone);
     const passwordHash = await bcrypt.hash(temporaryPassword, 12);
@@ -612,8 +657,11 @@ async function unlockStaffAccount(targetUserId, actor = {}) {
 async function forceLogoutStaffAccount(targetUserId, actor = {}) {
   return db.transaction(async (client) => {
     const account = await findById(targetUserId, client);
-    if (!account || !['operator', 'boss'].includes(account.role)) {
+    if (!account || !accessControl.isBackstageRole(account)) {
       throw new AuthError('ACCOUNT_NOT_FOUND', 'Staff account does not exist', 404);
+    }
+    if (!accessControl.canManageAccountRecord(actor, account)) {
+      throw new AuthError('FORBIDDEN', 'Permission denied', 403);
     }
     await bumpSessionVersion(client, account);
     await client.query(
@@ -644,8 +692,11 @@ async function bumpSessionVersion(client, account) {
 async function setStaffAccountStatus(targetUserId, status, actor = {}, action, options = {}) {
   return db.transaction(async (client) => {
     const account = await findById(targetUserId, client);
-    if (!account || !['operator', 'boss'].includes(account.role)) {
+    if (!account || !accessControl.isBackstageRole(account)) {
       throw new AuthError('ACCOUNT_NOT_FOUND', 'Staff account does not exist', 404);
+    }
+    if (!accessControl.canManageAccountRecord(actor, account)) {
+      throw new AuthError('FORBIDDEN', 'Permission denied', 403);
     }
     await client.query(
       `UPDATE user_accounts

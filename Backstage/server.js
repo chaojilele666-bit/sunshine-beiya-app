@@ -402,9 +402,12 @@ function requireAccountsAccess(res, user) {
     send(res, 401, { ok: false, error: 'Login required' });
     return false;
   }
-  const authz = accessControl.canAccessModule(user, 'accounts');
-  if (!authz.ok) {
-    send(res, authz.status, { ok: false, error: authz.message });
+  if (!accessControl.isBackstageRole(user)) {
+    send(res, 403, { ok: false, error: 'Permission denied' });
+    return false;
+  }
+  if (accessControl.canonicalRole(user.role) === 'store_staff') {
+    send(res, 403, { ok: false, error: 'Permission denied' });
     return false;
   }
   return true;
@@ -1381,7 +1384,7 @@ async function handleApi(req, res) {
           send(res, 403, { ok: false, error: 'Permission denied' });
           return;
         }
-        const payload = accessControl.scopePayloadForUpdate(currentUser, resource, body);
+        const payload = accessControl.scopePayloadForUpdate(currentUser, resource, body, before);
         const record = await resourceRepository.update(resource, id, payload, getActor(req, currentUser));
         if (!record) {
           send(res, 404, { error: 'Record not found' });
@@ -1526,7 +1529,7 @@ async function handleApi(req, res) {
         send(res, 403, { ok: false, error: 'Cannot edit service module across type pages' });
         return;
       }
-      const payload = accessControl.scopePayloadForUpdate(currentUser, resource, body);
+      const payload = accessControl.scopePayloadForUpdate(currentUser, resource, body, before);
       if (resource === 'serviceModules') {
         payload.moduleType = before.moduleType;
       }

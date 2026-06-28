@@ -1,6 +1,6 @@
 const db = require('../db');
 
-const BACKSTAGE_ACCOUNT_ROLES = new Set(['运营端', '管理端']);
+const BACKSTAGE_ACCOUNT_ROLES = new Set(['operator', 'boss', 'management', 'store_manager', 'store_staff']);
 const BACKSTAGE_ACCOUNT_PERMISSIONS = new Set([
   '阿姨管理',
   '客户需求',
@@ -32,9 +32,12 @@ const resourceConfigs = {
       name: 'name',
       phone: 'phone',
       role: 'role',
+      storeId: 'store_id',
+      organizationType: 'organization_type',
       entry: 'entry',
       permissions: 'permissions',
       status: 'status',
+      accountStatus: 'account_status',
       note: 'note'
     },
     defaults: { entry: '后台管理', permissions: [], status: '启用' },
