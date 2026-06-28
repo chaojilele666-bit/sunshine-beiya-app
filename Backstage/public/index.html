@@ -27,33 +27,70 @@
       </div>
     </section>
 
-    <header class="topbar app-shell">
-      <div>
-        <h1>北京阳光北亚家政后台</h1>
-        <p>一期覆盖小程序完整流程：客户需求、预约、阿姨资料、接单、订单、门店和首页展示。</p>
+    <button id="mobileNavToggle" class="mobile-nav-toggle app-shell" type="button" aria-label="打开功能导航">☰</button>
+
+    <aside class="sidebar app-shell" id="sidebar">
+      <div class="sidebar-brand">
+        <strong>阳光北亚家政后台</strong>
+        <span>账号管理与数据运营平台</span>
       </div>
-      <div id="currentUser" class="current-user"></div>
-      <button id="refreshBtn">刷新数据</button>
+      <nav class="tabs" aria-label="后台功能导航">
+        <button class="tab active" data-route="home">首页</button>
+        <button class="tab" data-route="dashboard" data-resource="dashboard">每日数据</button>
+        <button class="tab" data-route="demands" data-resource="demands">客户需求</button>
+        <button class="tab" data-route="demands-list" data-resource="demands">客户管理</button>
+        <button class="tab" data-route="ayis" data-resource="ayis">阿姨管理</button>
+        <button class="tab" data-route="demands-interviews" data-resource="appointments">面试安排</button>
+        <button class="tab" data-route="appointments" data-resource="appointments">预约记录</button>
+        <button class="tab" data-route="todos" data-resource="todos">跟进待办</button>
+        <button class="tab" data-route="stores" data-resource="stores">门店信息</button>
+        <button class="tab" data-route="accounts" data-resource="accounts">账号与权限</button>
+        <button class="tab" data-route="company-services" data-resource="serviceModules">公司服务配置</button>
+        <button class="tab" data-route="exports" data-resource="exportInfo">导出信息</button>
+        <button class="tab" data-route="audit-logs" data-resource="auditLogs">审计日志</button>
+        <button class="tab" data-route="applications" data-resource="applications">接单申请</button>
+        <button class="tab" data-route="orders" data-resource="orders">订单跟进</button>
+        <button class="tab" data-route="dispatches" data-resource="orderDispatches">人工派单</button>
+      </nav>
+      <div class="sidebar-footer">
+        <button id="sidebarProfileBtn" class="sidebar-profile" type="button">
+          <span>个人信息</span>
+          <small>账号信息与安全管理</small>
+        </button>
+        <button id="sidebarLogoutBtn" class="sidebar-logout" type="button">退出登录</button>
+      </div>
+    </aside>
+
+    <header class="topbar app-shell">
+      <div class="topbar-title">
+        <h1 id="topPageTitle">首页</h1>
+        <p id="topBreadcrumb">首页 / 首页经营数据</p>
+      </div>
+      <div class="topbar-actions">
+        <button id="refreshBtn" class="icon-button" type="button" title="刷新数据">↻</button>
+        <button id="notificationBtn" class="notification-button" type="button" title="通知">
+          <span>通知</span>
+          <strong id="notificationCount">0</strong>
+        </button>
+        <div id="currentOrg" class="current-org">待完善归属</div>
+        <div class="account-menu">
+          <button id="accountMenuBtn" class="account-trigger" type="button" aria-expanded="false">
+            <span class="avatar" aria-hidden="true">人</span>
+            <span id="currentUser" class="current-user"></span>
+            <span class="account-arrow" aria-hidden="true">⌄</span>
+          </button>
+          <div id="accountDropdown" class="account-dropdown" hidden>
+            <button type="button" data-shell-action="profile">个人信息</button>
+            <button type="button" data-shell-action="password">修改密码</button>
+            <button type="button" data-shell-action="logout">退出登录</button>
+          </div>
+        </div>
+      </div>
       <button id="logoutBtn" class="secondary top-logout">退出</button>
       <a class="api-link" href="/api/miniprogram" target="_blank">小程序接口预览</a>
     </header>
 
     <main class="layout app-shell">
-      <nav class="tabs">
-        <button class="tab active" data-route="home">后台首页</button>
-        <button class="tab" data-route="dashboard" data-resource="dashboard">经营看板</button>
-        <button class="tab" data-route="accounts" data-resource="accounts">账号权限</button>
-        <button class="tab" data-route="audit-logs" data-resource="auditLogs">&#25805;&#20316;&#35760;&#24405;</button>
-        <button class="tab" data-route="todos" data-resource="todos">今日待办</button>
-        <button class="tab" data-route="ayis" data-resource="ayis">阿姨管理</button>
-        <button class="tab" data-route="demands" data-resource="demands">客户需求</button>
-        <button class="tab" data-route="exports" data-resource="exportInfo">导出信息</button>
-        <button class="tab" data-route="applications" data-resource="applications">接单申请</button>
-        <button class="tab" data-route="orders" data-resource="orders">订单跟进</button>
-        <button class="tab" data-route="dispatches" data-resource="orderDispatches">人工派单</button>
-        <button class="tab" data-route="stores" data-resource="stores">门店信息</button>
-        <button class="tab" data-route="company-services" data-resource="serviceModules">公司服务</button>
-      </nav>
 
       <section class="panel">
         <div class="panel-head">

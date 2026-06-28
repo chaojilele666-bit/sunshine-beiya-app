@@ -845,6 +845,15 @@ const loginForm = document.querySelector('#loginForm');
 const loginTip = document.querySelector('#loginTip');
 const currentUserLabel = document.querySelector('#currentUser');
 const backHomeBtn = document.querySelector('#backHomeBtn');
+const topPageTitle = document.querySelector('#topPageTitle');
+const topBreadcrumb = document.querySelector('#topBreadcrumb');
+const currentOrgLabel = document.querySelector('#currentOrg');
+const notificationCount = document.querySelector('#notificationCount');
+const accountMenuBtn = document.querySelector('#accountMenuBtn');
+const accountDropdown = document.querySelector('#accountDropdown');
+const mobileNavToggle = document.querySelector('#mobileNavToggle');
+const sidebarProfileBtn = document.querySelector('#sidebarProfileBtn');
+const sidebarLogoutBtn = document.querySelector('#sidebarLogoutBtn');
 
 const roleAccess = {
   boss: ['dashboard', 'accounts', 'auditLogs', 'exportInfo', 'todos', 'companyProfile', 'ayis', 'demands', 'appointments', 'applications', 'orders', 'orderDispatches', 'stores', 'serviceModules', 'banners'],
@@ -4423,6 +4432,11 @@ boot();
     }
     document.querySelector('[data-route="dashboard"]') && (document.querySelector('[data-route="dashboard"]').textContent = '每日数据');
     document.querySelector('[data-route="accounts"]') && (document.querySelector('[data-route="accounts"]').textContent = '账号与权限');
+    document.querySelector('[data-route="home"]') && (document.querySelector('[data-route="home"]').textContent = '首页');
+    document.querySelector('[data-route="todos"]') && (document.querySelector('[data-route="todos"]').textContent = '跟进待办');
+    document.querySelector('[data-route="exports"]') && (document.querySelector('[data-route="exports"]').textContent = '导出信息');
+    document.querySelector('[data-route="company-services"]') && (document.querySelector('[data-route="company-services"]').textContent = '公司服务配置');
+    document.querySelector('[data-route="audit-logs"]') && (document.querySelector('[data-route="audit-logs"]').textContent = '审计日志');
   }
 
   function labelRoleV6(role) {
@@ -4435,6 +4449,96 @@ boot();
 
   function labelOrgV6(value) {
     return ORG_LABELS_V6[value] || value || '待完善归属';
+  }
+
+  function displayNameV7(user = currentUser) {
+    const rawName = String(user?.name || '').trim();
+    const rawUsername = String(user?.username || '').trim();
+    const roleLabel = labelRoleV6(user?.role);
+    const isPhoneLike = /^\d{7,}$/.test(rawUsername);
+    if (rawName.length >= 2) return rawName;
+    if (!isPhoneLike && rawUsername.length >= 2) return rawUsername;
+    return roleLabel === '管理' ? '后台管理员' : '后台员工';
+  }
+
+  function orgNameV7(user = currentUser) {
+    const storeId = user?.storeId || user?.store_id;
+    return user?.store?.name
+      || (storeId ? storeNameV6(storeId) : '')
+      || labelOrgV6(user?.organizationType || user?.organization_type)
+      || '待完善归属';
+  }
+
+  function routeLabelV7(route) {
+    const labels = {
+      home: '首页经营数据',
+      dashboard: '每日数据',
+      accounts: '员工账号',
+      'audit-logs': '审计日志',
+      todos: '跟进待办',
+      ayis: '阿姨管理',
+      demands: '客户需求',
+      'demands-list': '客户列表',
+      'demands-interviews': '面试安排',
+      appointments: '预约记录',
+      exports: '导出信息',
+      applications: '接单申请',
+      orders: '订单跟进',
+      dispatches: '人工派单',
+      stores: '门店信息',
+      'company-services': '公司服务配置',
+      profile: '个人信息',
+      'change-password': '修改密码'
+    };
+    return labels[route] || sectionTitle.textContent || '后台';
+  }
+
+  function routeGroupV7(route) {
+    if (['home', 'dashboard'].includes(route)) return '首页';
+    if (['demands', 'demands-list'].includes(route)) return '客户管理';
+    if (['demands-interviews', 'appointments'].includes(route)) return '面试安排';
+    if (route === 'accounts') return '账号与权限';
+    if (route === 'audit-logs') return '审计日志';
+    if (route === 'exports') return '导出信息';
+    if (route === 'todos') return '跟进待办';
+    if (route === 'stores') return '门店信息';
+    if (['company-services'].includes(route) || route.startsWith('company-services/')) return '公司服务配置';
+    return routeLabelV7(route);
+  }
+
+  function syncShellChromeV7() {
+    const route = getRouteFromHash() || currentRoute || 'home';
+    const title = sectionTitle.textContent || routeLabelV7(route);
+    if (topPageTitle) topPageTitle.textContent = title;
+    if (topBreadcrumb) topBreadcrumb.textContent = `${routeGroupV7(route)} / ${routeLabelV7(route)}`;
+    if (currentOrgLabel) currentOrgLabel.textContent = orgNameV7();
+    if (notificationCount) notificationCount.textContent = String(Array.isArray(backstageNotifications) ? backstageNotifications.length : 0);
+  }
+
+  function setAccountMenuOpenV7(open) {
+    if (!accountDropdown || !accountMenuBtn) return;
+    accountDropdown.hidden = !open;
+    accountMenuBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+
+  function openProfileDrawer() {
+    setAccountMenuOpenV7(false);
+    setRoute('profile');
+  }
+
+  function openPasswordEntryV7() {
+    setAccountMenuOpenV7(false);
+    setRoute('profile');
+  }
+
+  async function logoutV7() {
+    setAccountMenuOpenV7(false);
+    try {
+      await api('auth/logout', { method: 'POST' });
+    } catch (error) {
+      // Local logout should still clear the browser state if the session already expired.
+    }
+    clearAuth('已退出，请重新登录。');
   }
 
   function fmtV6(value) {
@@ -4478,15 +4582,12 @@ boot();
     }
     document.body.classList.add('is-authed');
     document.body.classList.toggle('must-change-password', Boolean(currentUser.mustChangePassword));
-    const rawName = String(currentUser.name || '').trim();
-    const rawUsername = String(currentUser.username || '').trim();
-    const isPhoneLike = /^\d{7,}$/.test(rawUsername);
-    const displayName = rawName.length >= 2
-      ? rawName
-      : (!isPhoneLike && rawUsername.length >= 2 ? rawUsername : (labelRoleV6(currentUser.role) === '管理' ? '后台管理员' : '后台员工'));
+    const displayName = displayNameV7(currentUser);
     currentUserLabel.textContent = currentUser.mustChangePassword
       ? '首次登录，请设置新密码'
       : `${displayName} / ${labelRoleV6(currentUser.role)}`;
+    if (currentOrgLabel) currentOrgLabel.textContent = orgNameV7(currentUser);
+    if (notificationCount) notificationCount.textContent = String(Array.isArray(backstageNotifications) ? backstageNotifications.length : 0);
     const allowed = new Set(getAllowedResources().concat('profile', 'changePassword'));
     if (currentUser.mustChangePassword) {
       allowed.clear();
@@ -5009,6 +5110,39 @@ boot();
     }
   }, true);
 
+  accountMenuBtn?.addEventListener('click', (event) => {
+    event.stopPropagation();
+    setAccountMenuOpenV7(accountDropdown?.hidden !== false);
+  });
+
+  accountDropdown?.addEventListener('click', (event) => {
+    const button = event.target.closest('button[data-shell-action]');
+    if (!button) return;
+    event.preventDefault();
+    const action = button.dataset.shellAction;
+    if (action === 'profile') openProfileDrawer();
+    if (action === 'password') openPasswordEntryV7();
+    if (action === 'logout') logoutV7();
+  });
+
+  sidebarProfileBtn?.addEventListener('click', openProfileDrawer);
+  sidebarLogoutBtn?.addEventListener('click', logoutV7);
+
+  mobileNavToggle?.addEventListener('click', () => {
+    document.body.classList.toggle('nav-open');
+  });
+
+  document.querySelector('.tabs')?.addEventListener('click', () => {
+    document.body.classList.remove('nav-open');
+  }, true);
+
+  document.addEventListener('click', (event) => {
+    if (!event.target.closest('.account-menu')) setAccountMenuOpenV7(false);
+  });
+
+  new MutationObserver(syncShellChromeV7).observe(sectionTitle, { childList: true, characterData: true, subtree: true });
+  new MutationObserver(syncShellChromeV7).observe(sectionDesc, { childList: true, characterData: true, subtree: true });
+
   setupV6Shell();
   if (currentUser) {
     applyAuthShell();
@@ -5016,4 +5150,5 @@ boot();
       setRoute('change-password');
     }
   }
+  syncShellChromeV7();
 })();
