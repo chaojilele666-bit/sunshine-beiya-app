@@ -64,6 +64,16 @@ function maskPhone(phone) {
   return `${text.slice(0, 3)}****${text.slice(-4)}`;
 }
 
+function auditActor(user) {
+  return {
+    id: user && user.id,
+    name: user ? (user.name || user.username || user.phone || `user:${user.id}`) : 'system',
+    role: user && user.role,
+    storeId: user && (user.storeId || (user.store && user.store.id)),
+    organizationType: user && user.organizationType
+  };
+}
+
 function parsePositiveInteger(value, fallback, max) {
   const number = Number(value);
   if (!Number.isFinite(number) || number <= 0) return fallback;
@@ -218,10 +228,7 @@ async function assignDemand(demandId, payload, actorUser) {
     const after = result.rows[0];
     after.assigned_operator_name = operator ? operator.displayName : null;
     after.assigned_operator_role = operator ? operator.role : null;
-    await resourceRepository.writeAudit(client, operatorId ? 'assign_operator' : 'unassign_operator', 'demands', demandId, demandSummary(before), demandSummary(after), {
-      name: actorUser.username || actorUser.phone || `user:${actorUser.id}`,
-      role: actorUser.role
-    });
+    await resourceRepository.writeAudit(client, operatorId ? 'assign_operator' : 'unassign_operator', 'demands', demandId, demandSummary(before), demandSummary(after), auditActor(actorUser));
     return demandSummary(after);
   });
 }
@@ -274,10 +281,21 @@ async function createFollowUp(demandId, payload, user) {
 
     const insert = await client.query(
       `INSERT INTO demand_follow_ups (
-        demand_id, operator_id, method, result, note, contacted_at, next_follow_up_at
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7)
+        demand_id, operator_id, method, result, note, contacted_at, next_follow_up_at,
+        source_store_id, actor_store_id_snapshot, actor_organization_snapshot
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$8,$9)
        RETURNING *`,
-      [Number(demandId), Number(user.id), method, result, note, contactedAt, nextFollowUpAt]
+      [
+        Number(demandId),
+        Number(user.id),
+        method,
+        result,
+        note,
+        contactedAt,
+        nextFollowUpAt,
+        user.storeId || (user.store && user.store.id) || null,
+        user.organizationType || null
+      ]
     );
 
     const nextStatus = PENDING_STATUSES.has(demandBefore.status) ? '已联系' : demandBefore.status;
@@ -290,14 +308,8 @@ async function createFollowUp(demandId, payload, user) {
       [nextStatus, contactedAt, nextFollowUpAt, Number(demandId)]
     );
     const demandAfter = await getDemandForUpdate(client, demandId);
-    await resourceRepository.writeAudit(client, 'follow_up', 'demand_follow_ups', insert.rows[0].id, null, followUpToClient(insert.rows[0]), {
-      name: user.username || user.phone || `user:${user.id}`,
-      role: user.role
-    });
-    await resourceRepository.writeAudit(client, 'update_follow_up_time', 'demands', demandId, demandSummary(demandBefore), demandSummary(demandAfter), {
-      name: user.username || user.phone || `user:${user.id}`,
-      role: user.role
-    });
+    await resourceRepository.writeAudit(client, 'follow_up', 'demand_follow_ups', insert.rows[0].id, null, followUpToClient(insert.rows[0]), auditActor(user));
+    await resourceRepository.writeAudit(client, 'update_follow_up_time', 'demands', demandId, demandSummary(demandBefore), demandSummary(demandAfter), auditActor(user));
     await notificationRepository.notifyByPhone(client, demandAfter.phone, 'customer', {
       messageType: 'demand_follow_up',
       title: '已安排跟进',

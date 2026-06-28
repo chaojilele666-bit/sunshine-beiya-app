@@ -915,6 +915,22 @@ async function handleApi(req, res) {
     return;
   }
 
+  if (resource === 'analytics' && req.method === 'GET') {
+    if (!currentUser) {
+      send(res, 401, { ok: false, error: 'Login required' });
+      return;
+    }
+    try {
+      const query = new URL(req.url, `http://${req.headers.host || `localhost:${PORT}`}`).searchParams;
+      const view = parts[2] || 'overview';
+      const result = await backstageRepository.getAnalytics(currentUser, Object.fromEntries(query.entries()), view);
+      send(res, 200, Object.assign({ ok: true, view }, result));
+    } catch (error) {
+      sendError(res, error.status || 400, 'Analytics failed', error.message);
+    }
+    return;
+  }
+
   if (resource === 'dashboard' && req.method === 'GET') {
     const authz = accessControl.canAccessResource(currentUser, resource, req.method);
     if (!authz.ok) {
@@ -1623,8 +1639,11 @@ function sendError(res, status, message, detail) {
 function getActor(req, user) {
   if (user) {
     return {
+      id: user.id,
       name: user.username || user.phone || `user:${user.id}`,
-      role: user.role
+      role: user.role,
+      storeId: user.storeId || (user.store && user.store.id) || null,
+      organizationType: user.organizationType || ''
     };
   }
   const decodeHeader = (value, fallback) => {

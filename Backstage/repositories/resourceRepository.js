@@ -1,5 +1,20 @@
 const db = require('../db');
 
+const CREATE_ACTION_TYPES = {
+  ayis: 'create_ayi',
+  demands: 'create_demand',
+  appointments: 'create_appointment',
+  demand_follow_ups: 'create_follow_up'
+};
+
+const UPDATE_ACTION_TYPES = {
+  ayis: 'review_ayi',
+  demands: 'update_business_status',
+  appointments: 'update_business_status',
+  orderDispatches: 'update_business_status',
+  orders: 'update_business_status'
+};
+
 const BACKSTAGE_ACCOUNT_ROLES = new Set(['operator', 'boss', 'management', 'store_manager', 'store_staff']);
 const BACKSTAGE_ACCOUNT_PERMISSIONS = new Set([
   '阿姨管理',
@@ -72,6 +87,11 @@ const resourceConfigs = {
       availableFrom: 'available_from',
       availableTo: 'available_to',
       statusConfirmedAt: 'status_confirmed_at',
+      createdByAccountId: 'created_by_account_id',
+      sourceStoreId: 'source_store_id',
+      updatedByAccountId: 'updated_by_account_id',
+      currentOwnerAccountId: 'current_owner_account_id',
+      currentStoreId: 'current_store_id',
       scheduleNeedsConfirmation: 'schedule_needs_confirmation',
       preferenceRegions: 'preference_regions',
       preferenceServices: 'preference_services',
@@ -102,7 +122,12 @@ const resourceConfigs = {
       assignedAt: 'assigned_at',
       assignedBy: 'assigned_by',
       lastFollowedUpAt: 'last_followed_up_at',
-      nextFollowUpAt: 'next_follow_up_at'
+      nextFollowUpAt: 'next_follow_up_at',
+      createdByAccountId: 'created_by_account_id',
+      sourceStoreId: 'source_store_id',
+      updatedByAccountId: 'updated_by_account_id',
+      currentOwnerAccountId: 'current_owner_account_id',
+      currentStoreId: 'current_store_id'
     },
     defaults: { source: '后台录入', status: '待处理' },
     orderBy: 'updated_at DESC, id DESC'
@@ -126,6 +151,11 @@ const resourceConfigs = {
       status: 'status',
       statusUpdatedBy: 'status_updated_by',
       statusUpdatedAt: 'status_updated_at',
+      createdByAccountId: 'created_by_account_id',
+      sourceStoreId: 'source_store_id',
+      updatedByAccountId: 'updated_by_account_id',
+      currentOwnerAccountId: 'current_owner_account_id',
+      currentStoreId: 'current_store_id',
       note: 'note'
     },
     defaults: { status: '待安排' },
@@ -276,7 +306,27 @@ function toNumber(value) {
 function normalizeValue(key, value) {
   if (['permissions', 'skills', 'tags'].includes(key)) return toArray(value);
   if (['visible', 'canStay', 'featured'].includes(key)) return toBoolean(value);
-  if (['age', 'experience', 'sort', 'demandId', 'ayiId', 'orderId', 'storeId', 'staffCount', 'consultantCount', 'ayiCount', 'latitude', 'longitude', 'assignedOperatorId', 'statusUpdatedBy'].includes(key)) return toNumber(value);
+  if ([
+    'age',
+    'experience',
+    'sort',
+    'demandId',
+    'ayiId',
+    'orderId',
+    'storeId',
+    'staffCount',
+    'consultantCount',
+    'ayiCount',
+    'latitude',
+    'longitude',
+    'assignedOperatorId',
+    'statusUpdatedBy',
+    'createdByAccountId',
+    'updatedByAccountId',
+    'currentOwnerAccountId',
+    'currentStoreId',
+    'sourceStoreId'
+  ].includes(key)) return toNumber(value);
   return value === undefined ? null : value;
 }
 
@@ -408,6 +458,83 @@ function makeSummary(item) {
   return JSON.stringify(item).slice(0, 500);
 }
 
+function actorStoreId(actor = {}) {
+  return actor.storeId || (actor.store && actor.store.id) || null;
+}
+
+function actorOrganization(actor = {}) {
+  return actor.organizationType || actor.organization_type || '';
+}
+
+function operationActionType(action, resource) {
+  if (action === 'create') return CREATE_ACTION_TYPES[resource] || `create_${resource}`;
+  if (action === 'follow_up') return 'create_follow_up';
+  if (action === 'assign_operator' || action === 'unassign_operator') return 'assign_owner';
+  if (action === 'complete_follow_up') return 'complete_follow_up';
+  if (action === 'dispatch' || action === 'status_update') return 'update_business_status';
+  if (action === 'update') return UPDATE_ACTION_TYPES[resource] || 'update_business_status';
+  return action;
+}
+
+function attributionPayload(resource, payload = {}, actor = {}) {
+  if (!['ayis', 'demands', 'appointments'].includes(resource)) return payload;
+  const next = Object.assign({}, payload);
+  const accountId = actor.id ? Number(actor.id) : null;
+  const storeId = actorStoreId(actor);
+  if (accountId) {
+    next.createdByAccountId = next.createdByAccountId || accountId;
+    next.updatedByAccountId = next.updatedByAccountId || accountId;
+  }
+  if (storeId) {
+    next.sourceStoreId = storeId;
+    next.currentStoreId = next.currentStoreId === undefined ? storeId : next.currentStoreId;
+  } else {
+    delete next.sourceStoreId;
+  }
+  return next;
+}
+
+function updateAttributionPayload(resource, payload = {}, actor = {}) {
+  if (!['ayis', 'demands', 'appointments'].includes(resource)) return payload;
+  const next = Object.assign({}, payload);
+  if (actor.id) next.updatedByAccountId = Number(actor.id);
+  delete next.createdByAccountId;
+  delete next.sourceStoreId;
+  return next;
+}
+
+async function upsertCustomerFromDemand(client, demand, actor = {}) {
+  if (!demand || !demand.phone) return null;
+  const result = await client.query(
+    `INSERT INTO customers (
+       name, phone, source, created_by_account_id, source_store_id,
+       current_owner_account_id, current_store_id, updated_by_account_id
+     ) VALUES ($1,$2,$3,$4,$5,$4,$5,$4)
+     ON CONFLICT (phone) DO UPDATE
+       SET updated_by_account_id = EXCLUDED.updated_by_account_id,
+           current_owner_account_id = COALESCE(customers.current_owner_account_id, EXCLUDED.current_owner_account_id),
+           current_store_id = COALESCE(customers.current_store_id, EXCLUDED.current_store_id)
+     RETURNING *, (xmax = 0) AS inserted`,
+    [
+      demand.customerName || demand.customer_name || 'customer',
+      demand.phone,
+      demand.source || 'backstage',
+      actor.id ? Number(actor.id) : null,
+      actorStoreId(actor)
+    ]
+  );
+  const row = result.rows[0];
+  if (row && row.inserted) {
+    await writeAudit(client, 'create_customer', 'customers', row.id, null, {
+      id: row.id,
+      name: row.name,
+      phone: row.phone,
+      sourceStoreId: row.source_store_id
+    }, actor);
+  }
+  return row;
+}
+
 function serviceModuleAuditResource(item) {
   if (!item || !item.moduleType) return 'serviceModules';
   return {
@@ -425,8 +552,11 @@ function auditResourceName(resource, item) {
 async function writeAudit(client, action, resource, id, before, after, actor = {}) {
   await client.query(
     `INSERT INTO audit_logs (
-      actor, actor_role, action, entity_type, resource_type, resource_id_text, before_data, after_data, before_summary, after_summary
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9,$10)`,
+      actor, actor_role, action, entity_type, resource_type, resource_id_text,
+      before_data, after_data, before_summary, after_summary,
+      actor_account_id, actor_name_snapshot, actor_role_snapshot, actor_store_id_snapshot,
+      actor_organization_snapshot, action_type, resource_id_text_v2, occurred_at
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9,$10,$11,$12,$13,$14,$15,$16,$17,now())`,
     [
       actor.name || 'system',
       actor.role || null,
@@ -437,7 +567,14 @@ async function writeAudit(client, action, resource, id, before, after, actor = {
       before ? JSON.stringify(before) : null,
       after ? JSON.stringify(after) : null,
       makeSummary(before),
-      makeSummary(after)
+      makeSummary(after),
+      actor.id ? Number(actor.id) : null,
+      actor.name || 'system',
+      actor.role || null,
+      actorStoreId(actor),
+      actorOrganization(actor),
+      operationActionType(action, resource),
+      String(id)
     ]
   );
 }
@@ -445,7 +582,8 @@ async function writeAudit(client, action, resource, id, before, after, actor = {
 async function create(resource, payload, actor) {
   const config = getConfig(resource);
   return db.transaction(async (client) => {
-    const normalized = normalizePayload(config, payload, false);
+    const attributedPayload = attributionPayload(resource, payload, actor);
+    const normalized = normalizePayload(config, attributedPayload, false);
     const columns = Object.keys(normalized);
     const values = Object.values(normalized);
     const placeholders = values.map((_, index) => `$${index + 1}`);
@@ -455,6 +593,9 @@ async function create(resource, payload, actor) {
     );
     const created = rowToResource(config, result.rows[0]);
     await syncSequence(client, config.table);
+    if (resource === 'demands') {
+      await upsertCustomerFromDemand(client, created, actor);
+    }
     await writeAudit(client, 'create', auditResourceName(resource, created), created.id, null, created, actor);
     return created;
   });
@@ -466,7 +607,8 @@ async function update(resource, id, payload, actor) {
     const before = await findById(resource, id, client);
     if (!before) return null;
 
-    const normalized = normalizePayload(config, payload, true);
+    const attributedPayload = updateAttributionPayload(resource, payload, actor);
+    const normalized = normalizePayload(config, attributedPayload, true);
     const columns = Object.keys(normalized).filter((column) => column !== 'id');
     if (!columns.length) return before;
 

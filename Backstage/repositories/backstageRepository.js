@@ -1,4 +1,5 @@
-﻿const db = require('../db');
+const db = require('../db');
+const accessControl = require('../accessControl');
 const companyProfileRepository = require('./companyProfileRepository');
 const resourceRepository = require('./resourceRepository');
 
@@ -730,8 +731,338 @@ async function writeAuditExport(actor, filters, count) {
   });
 }
 
+const ANALYTIC_ACTIONS = [
+  'create_ayi',
+  'create_customer',
+  'create_demand',
+  'create_interview',
+  'create_appointment',
+  'create_follow_up',
+  'complete_follow_up',
+  'update_business_status',
+  'assign_owner',
+  'review_ayi'
+];
+
+const ANALYTIC_METRICS = {
+  newAyis: ['create_ayi'],
+  newCustomers: ['create_customer'],
+  newDemands: ['create_demand'],
+  newInterviews: ['create_interview'],
+  newAppointments: ['create_appointment'],
+  newFollowUps: ['create_follow_up'],
+  completedFollowUps: ['complete_follow_up'],
+  statusChanges: ['update_business_status'],
+  effectiveOperations: ANALYTIC_ACTIONS
+};
+
+function analyticsRange(filters = {}) {
+  return getDashboardRange(filters);
+}
+
+function addActorScopeWhere(where, params, user, alias, { detail = false, storeId = null, mine = false } = {}) {
+  const role = accessControl.canonicalRole(user && user.role);
+  const scope = accessControl.dataScope(user);
+  if (mine) {
+    params.push(Number(user.id));
+    where.push(`${alias}.actor_account_id = $${params.length}`);
+    return;
+  }
+  if (role === 'boss') return;
+  if (role === 'operator') {
+    if (scope.type === 'stores') {
+      params.push(scope.storeIds);
+      where.push(`${alias}.actor_store_id_snapshot = ANY($${params.length}::int[])`);
+    }
+    return;
+  }
+  if (role === 'store_manager') {
+    if (detail || storeId) {
+      const ownStore = Number(user.storeId);
+      params.push(ownStore);
+      where.push(`${alias}.actor_store_id_snapshot = $${params.length}`);
+    }
+    return;
+  }
+  if (role === 'store_staff') {
+    params.push(Number(user.id));
+    where.push(`${alias}.actor_account_id = $${params.length}`);
+    return;
+  }
+  where.push('1 = 0');
+}
+
+function addAnalyticsDateWhere(where, params, range, alias = 'audit_logs') {
+  params.push(range.startDate);
+  where.push(`${alias}.occurred_at >= $${params.length}::date`);
+  params.push(range.endDate);
+  where.push(`${alias}.occurred_at < ($${params.length}::date + INTERVAL '1 day')`);
+}
+
+function addActionWhere(where, params, metric, alias = 'audit_logs') {
+  const actions = ANALYTIC_METRICS[metric] || ANALYTIC_ACTIONS;
+  params.push(actions);
+  where.push(`${alias}.action_type = ANY($${params.length}::text[])`);
+}
+
+function metricsFromRows(rows) {
+  const counts = Object.fromEntries(Object.keys(ANALYTIC_METRICS).map((key) => [key, 0]));
+  rows.forEach((row) => {
+    const action = row.action_type;
+    Object.entries(ANALYTIC_METRICS).forEach(([metric, actions]) => {
+      if (actions.includes(action)) counts[metric] += Number(row.value) || 0;
+    });
+  });
+  return counts;
+}
+
+function storeBucketSql(alias = 'audit_logs') {
+  return `
+    CASE
+      WHEN ${alias}.actor_store_id_snapshot IS NOT NULL THEN ${alias}.actor_store_id_snapshot::text
+      WHEN ${alias}.actor_organization_snapshot IN ('headquarters','operations_center') THEN '__headquarters__'
+      ELSE '__unassigned__'
+    END`;
+}
+
+function storeBucketNameSql(alias = 'audit_logs') {
+  return `
+    CASE
+      WHEN ${alias}.actor_store_id_snapshot IS NOT NULL THEN COALESCE(stores.name, 'Store ' || ${alias}.actor_store_id_snapshot::text)
+      WHEN ${alias}.actor_organization_snapshot IN ('headquarters','operations_center') THEN 'headquarters'
+      ELSE 'unassigned'
+    END`;
+}
+
+async function getAnalyticsOverview(user, filters = {}) {
+  const range = analyticsRange(filters);
+  const where = [];
+  const params = [];
+  addActionWhere(where, params, 'effectiveOperations');
+  addActorScopeWhere(where, params, user, 'audit_logs', { mine: filters.mine });
+  addAnalyticsDateWhere(where, params, range);
+  const result = await db.query(
+    `SELECT action_type, count(*)::integer AS value, max(occurred_at) AS last_at
+     FROM audit_logs
+     WHERE ${where.join(' AND ')}
+     GROUP BY action_type`,
+    params
+  );
+  const metrics = metricsFromRows(result.rows);
+  const lastOperationAt = result.rows.reduce((latest, row) => {
+    if (!row.last_at) return latest;
+    return !latest || new Date(row.last_at) > new Date(latest) ? row.last_at : latest;
+  }, null);
+  return { range, metrics, lastOperationAt };
+}
+
+async function getAnalyticsStores(user, filters = {}) {
+  const range = analyticsRange(filters);
+  const where = [];
+  const params = [];
+  addActionWhere(where, params, 'effectiveOperations');
+  addActorScopeWhere(where, params, user, 'audit_logs');
+  addAnalyticsDateWhere(where, params, range);
+  const result = await db.query(
+    `SELECT
+       ${storeBucketSql()} AS bucket,
+       ${storeBucketNameSql()} AS name,
+       audit_logs.action_type,
+       count(*)::integer AS value,
+       max(audit_logs.occurred_at) AS last_at
+     FROM audit_logs
+     LEFT JOIN stores ON stores.id = audit_logs.actor_store_id_snapshot
+     WHERE ${where.join(' AND ')}
+     GROUP BY 1, 2, 3
+     ORDER BY name ASC`,
+    params
+  );
+  const byBucket = new Map();
+  result.rows.forEach((row) => {
+    if (!byBucket.has(row.bucket)) {
+      const storeId = /^\d+$/.test(String(row.bucket)) ? Number(row.bucket) : null;
+      const bucketType = storeId ? 'store' : String(row.bucket).replace(/^__|__$/g, '');
+      byBucket.set(row.bucket, { bucket: row.bucket, bucketType, storeId, name: row.name, metrics: {}, lastOperationAt: null });
+    }
+    const item = byBucket.get(row.bucket);
+    item.metrics = metricsFromRows(result.rows.filter((candidate) => candidate.bucket === row.bucket));
+    item.lastOperationAt = !item.lastOperationAt || new Date(row.last_at) > new Date(item.lastOperationAt) ? row.last_at : item.lastOperationAt;
+  });
+  const rows = Array.from(byBucket.values());
+  return { range, stores: rows, rows };
+}
+
+async function getAnalyticsStaff(user, filters = {}) {
+  const range = analyticsRange(filters);
+  const where = [];
+  const params = [];
+  addActionWhere(where, params, 'effectiveOperations');
+  addActorScopeWhere(where, params, user, 'audit_logs', { detail: true, mine: filters.mine });
+  if (filters.storeId) {
+    params.push(Number(filters.storeId));
+    where.push(`audit_logs.actor_store_id_snapshot = $${params.length}`);
+  }
+  addAnalyticsDateWhere(where, params, range);
+  const result = await db.query(
+    `SELECT
+       COALESCE(audit_logs.actor_account_id, 0)::integer AS account_id,
+       COALESCE(audit_logs.actor_name_snapshot, 'unknown') AS name,
+       audit_logs.actor_role_snapshot AS role,
+       audit_logs.actor_store_id_snapshot AS store_id,
+       audit_logs.action_type,
+       count(*)::integer AS value,
+       max(audit_logs.occurred_at) AS last_at
+     FROM audit_logs
+     WHERE ${where.join(' AND ')}
+     GROUP BY account_id, name, role, store_id, audit_logs.action_type
+     ORDER BY name ASC`,
+    params
+  );
+  const byStaff = new Map();
+  result.rows.forEach((row) => {
+    const key = String(row.account_id);
+    if (!byStaff.has(key)) byStaff.set(key, {
+      accountId: row.account_id || null,
+      name: row.name,
+      role: row.role,
+      storeId: row.store_id,
+      metrics: {},
+      lastOperationAt: null
+    });
+    const item = byStaff.get(key);
+    item.metrics = metricsFromRows(result.rows.filter((candidate) => String(candidate.account_id) === key));
+    item.lastOperationAt = !item.lastOperationAt || new Date(row.last_at) > new Date(item.lastOperationAt) ? row.last_at : item.lastOperationAt;
+  });
+  const rows = Array.from(byStaff.values());
+  return { range, staff: rows, rows };
+}
+
+async function getAnalyticsTrends(user, filters = {}) {
+  const range = analyticsRange(filters);
+  const where = [];
+  const params = [];
+  addActionWhere(where, params, 'effectiveOperations');
+  addActorScopeWhere(where, params, user, 'audit_logs');
+  addAnalyticsDateWhere(where, params, range);
+  const result = await db.query(
+    `WITH days AS (
+       SELECT generate_series($${params.length + 1}::date, $${params.length + 2}::date, INTERVAL '1 day')::date AS day
+     ),
+     ops AS (
+       SELECT audit_logs.occurred_at::date AS day, audit_logs.action_type, count(*)::integer AS value
+       FROM audit_logs
+       WHERE ${where.join(' AND ')}
+       GROUP BY audit_logs.occurred_at::date, audit_logs.action_type
+     )
+     SELECT to_char(days.day, 'YYYY-MM-DD') AS date, ops.action_type, COALESCE(ops.value, 0)::integer AS value
+     FROM days
+     LEFT JOIN ops ON ops.day = days.day
+     ORDER BY days.day ASC`,
+    params.concat([range.startDate, range.endDate])
+  );
+  const byDate = new Map();
+  result.rows.forEach((row) => {
+    if (!byDate.has(row.date)) byDate.set(row.date, { date: row.date, metrics: Object.fromEntries(Object.keys(ANALYTIC_METRICS).map((key) => [key, 0])) });
+    if (!row.action_type) return;
+    Object.entries(ANALYTIC_METRICS).forEach(([metric, actions]) => {
+      if (actions.includes(row.action_type)) byDate.get(row.date).metrics[metric] += Number(row.value) || 0;
+    });
+  });
+  return { range, trends: Array.from(byDate.values()) };
+}
+
+function sanitizeRecordForRole(user, row) {
+  const role = accessControl.canonicalRole(user && user.role);
+  const base = {
+    id: row.id,
+    actionType: row.action_type,
+    resourceType: row.resource_type || row.entity_type,
+    resourceId: row.resource_id_text || row.resource_id_text_v2,
+    occurredAt: row.occurred_at
+  };
+  if (role === 'store_manager' && row.actor_store_id_snapshot && Number(row.actor_store_id_snapshot) !== Number(user.storeId)) {
+    return base;
+  }
+  if (role === 'store_staff' && Number(row.actor_account_id) !== Number(user.id)) return base;
+  return Object.assign(base, {
+    actorAccountId: row.actor_account_id,
+    actorName: row.actor_name_snapshot,
+    actorRole: row.actor_role_snapshot,
+    actorStoreId: row.actor_store_id_snapshot,
+    summary: row.after_summary || row.before_summary
+  });
+}
+
+async function getAnalyticsRecords(user, filters = {}) {
+  const range = analyticsRange(filters);
+  const metric = filters.metric || 'effectiveOperations';
+  const pageSize = Math.min(Math.max(Number(filters.pageSize) || 20, 1), 100);
+  const page = Math.max(Number(filters.page) || 1, 1);
+  const offset = (page - 1) * pageSize;
+  const where = [];
+  const params = [];
+  addActorScopeWhere(where, params, user, 'audit_logs', { detail: true, mine: filters.mine });
+  addActionWhere(where, params, metric);
+  addAnalyticsDateWhere(where, params, range);
+  if (filters.storeId) {
+    const role = accessControl.canonicalRole(user && user.role);
+    if (role === 'store_manager' && Number(filters.storeId) !== Number(user.storeId)) {
+      return { range, page, pageSize, total: 0, rows: [], privacy: 'aggregate_only' };
+    }
+    params.push(Number(filters.storeId));
+    where.push(`audit_logs.actor_store_id_snapshot = $${params.length}`);
+  }
+  if (filters.accountId) {
+    params.push(Number(filters.accountId));
+    where.push(`audit_logs.actor_account_id = $${params.length}`);
+  }
+  const count = await db.query(`SELECT count(*)::integer AS total FROM audit_logs WHERE ${where.join(' AND ')}`, params);
+  const rows = await db.query(
+    `SELECT *
+     FROM audit_logs
+     WHERE ${where.join(' AND ')}
+     ORDER BY occurred_at DESC
+     LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+    params.concat([pageSize, offset])
+  );
+  return {
+    range,
+    page,
+    pageSize,
+    total: count.rows[0] ? Number(count.rows[0].total) : 0,
+    rows: rows.rows.map((row) => sanitizeRecordForRole(user, row))
+  };
+}
+
+async function getAnalytics(user, filters = {}, view = 'overview') {
+  if (!accessControl.isBackstageRole(user)) {
+    const error = new Error('Permission denied');
+    error.status = 403;
+    throw error;
+  }
+  if (view === 'stores') return getAnalyticsStores(user, filters);
+  if (view === 'staff') return getAnalyticsStaff(user, filters);
+  if (view === 'trends') return getAnalyticsTrends(user, filters);
+  if (view === 'records' || view === 'store-drilldown' || view === 'staff-drilldown') return getAnalyticsRecords(user, filters);
+  if (view === 'my') {
+    const [overview, records] = await Promise.all([
+      getAnalyticsOverview(user, Object.assign({}, filters, { mine: true })),
+      getAnalyticsRecords(user, Object.assign({}, filters, { mine: true }))
+    ]);
+    return Object.assign({ overview, records }, overview);
+  }
+  const [overview, stores, staff, trends] = await Promise.all([
+    getAnalyticsOverview(user, filters),
+    getAnalyticsStores(user, filters),
+    getAnalyticsStaff(user, filters),
+    getAnalyticsTrends(user, filters)
+  ]);
+  return Object.assign({}, overview, { stores: stores.stores, staff: staff.staff, trends: trends.trends });
+}
+
 module.exports = {
   createDispatch,
+  getAnalytics,
   getDashboard,
   getMiniprogramData,
   listAuditLogs,
