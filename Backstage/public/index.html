@@ -111,6 +111,19 @@
       </aside>
     </main>
 
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+    <div id="drawerOverlay" class="drawer-overlay app-shell" hidden></div>
+    <aside id="profileDrawer" class="profile-drawer app-shell" aria-label="个人信息抽屉" hidden>
+      <div class="drawer-head">
+        <div>
+          <h2>个人信息</h2>
+          <p>账号信息与安全管理</p>
+        </div>
+        <button id="profileDrawerClose" class="secondary" type="button">关闭</button>
+      </div>
+      <div id="profileDrawerBody" class="drawer-body"></div>
+    </aside>
+
     <script src="./app.js"></script>
   </body>
 </html>

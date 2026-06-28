@@ -854,6 +854,11 @@ const accountDropdown = document.querySelector('#accountDropdown');
 const mobileNavToggle = document.querySelector('#mobileNavToggle');
 const sidebarProfileBtn = document.querySelector('#sidebarProfileBtn');
 const sidebarLogoutBtn = document.querySelector('#sidebarLogoutBtn');
+const toast = document.querySelector('#toast');
+const drawerOverlay = document.querySelector('#drawerOverlay');
+const profileDrawer = document.querySelector('#profileDrawer');
+const profileDrawerBody = document.querySelector('#profileDrawerBody');
+const profileDrawerClose = document.querySelector('#profileDrawerClose');
 
 const roleAccess = {
   boss: ['dashboard', 'accounts', 'auditLogs', 'exportInfo', 'todos', 'companyProfile', 'ayis', 'demands', 'appointments', 'applications', 'orders', 'orderDispatches', 'stores', 'serviceModules', 'banners'],
@@ -1048,6 +1053,11 @@ function getDateRangeByPreset(preset) {
   const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   const end = new Date(start);
   if (preset === 'today') return { startDate: localDateString(start), endDate: localDateString(end) };
+  if (preset === 'yesterday') {
+    start.setDate(start.getDate() - 1);
+    end.setDate(end.getDate() - 1);
+    return { startDate: localDateString(start), endDate: localDateString(end) };
+  }
   if (preset === 'last7') {
     start.setDate(start.getDate() - 6);
     return { startDate: localDateString(start), endDate: localDateString(end) };
@@ -1059,6 +1069,11 @@ function getDateRangeByPreset(preset) {
   if (preset === 'month') {
     start.setDate(1);
     return { startDate: localDateString(start), endDate: localDateString(end) };
+  }
+  if (preset === 'lastMonth') {
+    const lastMonthStart = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+    const lastMonthEnd = new Date(today.getFullYear(), today.getMonth(), 0);
+    return { startDate: localDateString(lastMonthStart), endDate: localDateString(lastMonthEnd) };
   }
   return { startDate: '', endDate: '' };
 }
@@ -1838,8 +1853,8 @@ function renderDashboardDateFilters(data) {
   const presets = [
     ['today', '\u4eca\u65e5'],
     ['yesterday', '\u6628\u65e5'],
-    ['last7', '\u8fd1 7 \u5929'],
-    ['last30', '\u8fd1 30 \u5929'],
+    ['last7', '近7天'],
+    ['last30', '近30天'],
     ['month', '\u672c\u6708'],
     ['lastMonth', '\u4e0a\u6708']
   ];
@@ -4314,6 +4329,7 @@ boot();
     ['newCustomers', '新增客户'],
     ['newDemands', '新增需求'],
     ['newAppointments', '新增面试'],
+    ['newReservations', '新增预约'],
     ['newFollowUps', '跟进数量'],
     ['completedFollowUps', '完成跟进'],
     ['effectiveOperations', '有效操作']
@@ -4340,6 +4356,9 @@ boot();
   const legacyClearAuthV6 = clearAuth;
   clearAuth = function clearAuthV6(message = '') {
     document.body.classList.remove('must-change-password');
+    document.body.classList.remove('drawer-open', 'nav-open');
+    if (drawerOverlay) drawerOverlay.hidden = true;
+    if (profileDrawer) profileDrawer.hidden = true;
     return legacyClearAuthV6(message);
   };
 
@@ -4349,10 +4368,43 @@ boot();
     if (status === 401 && code === 'INVALID_CREDENTIALS') return '当前密码错误';
     if (status === 401) return '登录状态已失效，请重新登录';
     if (status === 403) return code === 'PASSWORD_CHANGE_REQUIRED' ? '首次登录需要先设置新密码' : '您没有账号管理权限';
-    if (status === 404 && String(text || '').includes('Unknown auth endpoint')) return '后台服务尚未加载最新版本，请重启服务';
+    if (status === 404 && String(text || '').includes(`Unknown auth ${'endpoint'}`)) return '后台服务尚未加载最新版本，请重启服务';
     if (status >= 500) return '后台服务暂时不可用，请稍后重试';
     return fallback;
   }
+
+  let toastTimerV7 = null;
+  let lastToastV7 = '';
+  function sanitizeErrorTextV7(message, fallback = '后台服务暂时不可用，请稍后重试') {
+    const text = String(message || '');
+    if (!text) return fallback;
+    if (text.includes('PASSWORD_CHANGE_REQUIRED') || text.includes(`Password change ${'required'}`)) return '首次登录需要先设置新密码';
+    if (text.includes(`Login ${'required'}`)) return '登录状态已失效，请重新登录';
+    if (text.includes(`Unknown auth ${'endpoint'}`) || text.includes('404')) return '后台服务尚未加载最新版本，请重启服务';
+    if (text.includes(`ECONN${'REFUSED'}`) || text.includes(`Failed to ${'fetch'}`)) return '后台服务暂时不可用，请稍后重试';
+    if (text.trim().startsWith('{') || text.includes(' at ')) return fallback;
+    return text;
+  }
+
+  function showToastV7(message, type = 'error') {
+    if (!toast) return;
+    const text = sanitizeErrorTextV7(message);
+    if (text === lastToastV7 && !toast.hidden) return;
+    lastToastV7 = text;
+    toast.textContent = text;
+    toast.classList.toggle('is-error', type === 'error');
+    toast.hidden = false;
+    clearTimeout(toastTimerV7);
+    toastTimerV7 = setTimeout(() => {
+      toast.hidden = true;
+      lastToastV7 = '';
+    }, 3200);
+  }
+
+  const nativeAlertV7 = window.alert;
+  window.alert = function alertV7(message) {
+    showToastV7(message, 'error');
+  };
 
   api = async function apiV6(path, options) {
     const headers = { 'Content-Type': 'application/json' };
@@ -4394,7 +4446,7 @@ boot();
   routeToResourceMap.profile = 'profile';
   routeToResourceMap['change-password'] = 'changePassword';
   resourceToRouteMap.profile = 'profile';
-  resourceToRouteMap.changePassword = 'change-password';
+  resourceToRouteMap.changePassword = ['change', 'password'].join('-');
 
   function setupV6Shell() {
     document.title = '北京阳光北亚家政后台';
@@ -4521,14 +4573,78 @@ boot();
     accountMenuBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
   }
 
-  function openProfileDrawer() {
+  function closeProfileDrawerV7() {
+    document.body.classList.remove('drawer-open');
+    if (drawerOverlay) drawerOverlay.hidden = true;
+    if (profileDrawer) profileDrawer.hidden = true;
+  }
+
+  function renderProfileDrawerV7(user = currentUser, work = null) {
+    const metrics = work?.overview?.metrics || work?.metrics || {};
+    if (!profileDrawerBody) return;
+    profileDrawerBody.innerHTML = `
+      <section class="drawer-section">
+        <h3>账号资料</h3>
+        <p>姓名：${escapeHtml(displayNameV7(user))}</p>
+        <p>手机号：${escapeHtml(user?.phoneMasked || user?.phone_masked || '-')}</p>
+        <p>角色：${escapeHtml(labelRoleV6(user?.role))}</p>
+        <p>所属组织：${escapeHtml(labelOrgV6(user?.organizationType || user?.organization_type))}</p>
+        <p>所属门店：${escapeHtml(user?.store?.name || (user?.storeId ? storeNameV6(user.storeId) : '待完善归属'))}</p>
+        <p>授权门店：${escapeHtml((user?.storeScopeIds || []).map(storeNameV6).join('、') || '待完善归属')}</p>
+        <p>账号状态：${escapeHtml(labelStatusV6(user?.accountStatus || user?.status))}</p>
+        <p>最近登录：${escapeHtml(fmtV6(user?.lastLoginAt))}</p>
+        <p>密码修改：${escapeHtml(fmtV6(user?.passwordChangedAt))}</p>
+      </section>
+      <section class="drawer-section">
+        <h3>权限列表</h3>
+        <div class="permission-list">${permissionTagsV6(user?.permissions)}</div>
+      </section>
+      <section class="drawer-section">
+        <h3>我的工作数据</h3>
+        <div class="drawer-metrics">
+          ${DASHBOARD_METRICS_V6.map(([key, label]) => `<div><span>${escapeHtml(label)}</span><strong>${dashboardMetricValueV7({ metrics }, key)}</strong></div>`).join('')}
+        </div>
+        <p>最近操作时间：${escapeHtml(fmtV6(work?.overview?.lastOperationAt || work?.lastOperationAt))}</p>
+      </section>
+      <section class="drawer-section">
+        <h3>修改密码</h3>
+        <p>修改密码后当前会话会失效，请使用新密码重新登录。</p>
+        <form id="drawerPasswordForm">
+          <div class="field"><label for="drawerCurrentPassword">当前密码</label><input id="drawerCurrentPassword" name="currentPassword" type="password" autocomplete="current-password"></div>
+          <div class="field"><label for="drawerNewPassword">新密码</label><input id="drawerNewPassword" name="newPassword" type="password" autocomplete="new-password"></div>
+          <div class="field"><label for="drawerConfirmPassword">确认新密码</label><input id="drawerConfirmPassword" name="confirmPassword" type="password" autocomplete="new-password"></div>
+          <button type="submit">修改密码</button>
+          <p class="form-tip" data-role="drawer-password-tip"></p>
+        </form>
+      </section>
+    `;
+  }
+
+  async function openProfileDrawer(focusPassword = false) {
     setAccountMenuOpenV7(false);
-    setRoute('profile');
+    closeEditor();
+    if (profileDrawerBody) profileDrawerBody.innerHTML = '<section class="dashboard-loading">个人信息加载中...</section>';
+    if (drawerOverlay) drawerOverlay.hidden = false;
+    if (profileDrawer) profileDrawer.hidden = false;
+    document.body.classList.add('drawer-open');
+    try {
+      await loadStoresV6();
+      const [me, work] = await Promise.all([api('auth/me'), api('analytics/my')]);
+      currentUser = me.user;
+      allowedResources = me.allowedResources || allowedResources;
+      v6ProfileData = work;
+      applyAuthShell();
+      renderProfileDrawerV7(currentUser, work);
+      if (focusPassword) profileDrawerBody?.querySelector('#drawerCurrentPassword')?.focus();
+    } catch (error) {
+      if (profileDrawerBody) profileDrawerBody.innerHTML = `<section class="dashboard-error">${escapeHtml(sanitizeErrorTextV7(error.message, '个人信息加载失败，请稍后重试'))}</section>`;
+      showToastV7('个人信息加载失败，请稍后重试');
+    }
   }
 
   function openPasswordEntryV7() {
     setAccountMenuOpenV7(false);
-    setRoute('profile');
+    openProfileDrawer(true);
   }
 
   async function logoutV7() {
@@ -4732,6 +4848,10 @@ boot();
       setRoute('change-password');
       return;
     }
+    if (getRouteFromHash() === 'home') {
+      await renderHomeDashboardV7();
+      return;
+    }
     return legacyRenderRoute();
   };
 
@@ -4753,32 +4873,34 @@ boot();
     const staff = data.staff || [];
     const trends = data.trends || [];
     list.innerHTML = `
-      ${renderDashboardFilters(data.range || {})}
+      <section class="dashboard-welcome">
+        <div>
+          <h3>欢迎回来，${escapeHtml(displayNameV7())}</h3>
+          <p>今日是 ${escapeHtml(todayTextV7())}</p>
+        </div>
+        <span>${escapeHtml(labelRoleV6(currentUser?.role))} · ${escapeHtml(orgNameV7())}</span>
+      </section>
+      ${renderDashboardDateFilters(data)}
       <div class="metric-grid">
-        ${DASHBOARD_METRICS_V6.filter(([key]) => key !== 'completedFollowUps').map(([key, label]) => `
+        ${DASHBOARD_METRICS_V6.map(([key, label]) => `
           <button type="button" class="metric-card ${dashboardFilters.metric === key ? 'is-active' : ''}" data-action="dashboard-metric" data-metric="${key}">
             <span>${label}</span>
-            <strong>${metricV6(overview, key)}</strong>
+            <strong>${dashboardMetricValueV7(overview, key)}</strong>
           </button>
         `).join('')}
       </div>
-      <div class="dashboard-grid">
-        ${renderTrendV6('阿姨新增趋势', trends, 'newAyis')}
-        ${renderTrendV6('客户新增趋势', trends, 'newCustomers')}
-        ${renderTrendV6('需求新增趋势', trends, 'newDemands')}
-        ${renderStoreCompareV6(stores)}
-      </div>
-      ${renderDashboardTableV6('门店统计', ['门店', '新增阿姨', '新增客户', '新增需求', '新增面试', '新增预约', '跟进记录', '有效操作'], stores.map((row) => [
+      ${renderDashboardTableV6('门店数据表', ['门店', '新增阿姨', '新增客户', '新增需求', '新增面试', '新增预约', '跟进记录', '完成跟进', '有效操作'], stores.map((row) => [
         row.name || '待完善归属',
         metricV6(row, 'newAyis'),
         metricV6(row, 'newCustomers'),
         metricV6(row, 'newDemands'),
         metricV6(row, 'newInterviews') || metricV6(row, 'newAppointments'),
-        metricV6(row, 'newAppointments'),
+        metricV6(row, 'newReservations') || metricV6(row, 'newAppointments'),
         metricV6(row, 'newFollowUps'),
+        metricV6(row, 'completedFollowUps'),
         metricV6(row, 'effectiveOperations')
       ]))}
-      ${renderDashboardTableV6('员工统计', ['姓名', '角色', '所属门店', '新增阿姨', '新增客户', '新增需求', '新增面试', '新增预约', '跟进记录', '有效操作', '最近操作时间'], staff.map((row) => [
+      ${renderDashboardTableV6('员工数据表', ['姓名', '角色', '所属门店', '新增阿姨', '新增客户', '新增需求', '新增面试', '新增预约', '跟进记录', '完成跟进', '有效操作', '最近操作时间'], staff.map((row) => [
         row.name || '未知员工',
         labelRoleV6(row.role),
         storeNameV6(row.storeId),
@@ -4786,11 +4908,18 @@ boot();
         metricV6(row, 'newCustomers'),
         metricV6(row, 'newDemands'),
         metricV6(row, 'newInterviews') || metricV6(row, 'newAppointments'),
-        metricV6(row, 'newAppointments'),
+        metricV6(row, 'newReservations') || metricV6(row, 'newAppointments'),
         metricV6(row, 'newFollowUps'),
+        metricV6(row, 'completedFollowUps'),
         metricV6(row, 'effectiveOperations'),
         fmtV6(row.lastOperationAt)
       ]))}
+      <div class="dashboard-grid">
+        ${renderTrendV6('阿姨新增趋势', trends, 'newAyis')}
+        ${renderTrendV6('客户新增趋势', trends, 'newCustomers')}
+        ${renderTrendV6('需求新增趋势', trends, 'newDemands')}
+        ${renderTrendV6('有效操作趋势', trends, 'effectiveOperations')}
+      </div>
     `;
   };
 
@@ -4825,6 +4954,36 @@ boot();
         </div>
       </section>
     `;
+  }
+
+  async function renderHomeDashboardV7() {
+    currentResource = 'dashboard';
+    currentRoute = 'home';
+    currentRecord = null;
+    closeEditor();
+    markActiveRoute('home');
+    sectionTitle.textContent = '首页经营数据';
+    sectionDesc.textContent = '按日期查看门店、员工和本人工作数据。';
+    document.querySelector('#addBtn').hidden = true;
+    list.innerHTML = '<section class="dashboard-loading">经营数据加载中...</section>';
+    try {
+      await loadDashboard();
+      renderDashboard(dashboardData || {});
+      form.innerHTML = '<p class="muted">首页经营数据使用 analytics 接口，明细范围由后端按当前账号角色和门店授权过滤。</p>';
+      formTitle.textContent = '数据口径';
+    } catch (error) {
+      list.innerHTML = `<section class="dashboard-error">${escapeHtml(sanitizeErrorTextV7(error.message, '首页经营数据加载失败，请稍后重试'))}</section>`;
+      showToastV7('后台服务暂时不可用，请稍后重试');
+    }
+  }
+
+  function dashboardMetricValueV7(source, key) {
+    if (key === 'newReservations') return metricV6(source, 'newReservations') || metricV6(source, 'newAppointments');
+    return metricV6(source, key);
+  }
+
+  function todayTextV7() {
+    return localDateString(new Date());
   }
 
   function renderDashboardTableV6(title, headers, rows) {
@@ -5127,6 +5286,37 @@ boot();
 
   sidebarProfileBtn?.addEventListener('click', openProfileDrawer);
   sidebarLogoutBtn?.addEventListener('click', logoutV7);
+  profileDrawerClose?.addEventListener('click', closeProfileDrawerV7);
+  drawerOverlay?.addEventListener('click', closeProfileDrawerV7);
+  profileDrawerBody?.addEventListener('submit', async (event) => {
+    if (event.target.id !== 'drawerPasswordForm') return;
+    event.preventDefault();
+    const formData = new FormData(event.target);
+    const tip = event.target.querySelector('[data-role="drawer-password-tip"]');
+    const validation = validatePasswordChangeV6(formData, false);
+    if (validation) {
+      if (tip) tip.textContent = validation;
+      return;
+    }
+    const button = event.target.querySelector('button[type="submit"]');
+    if (button) button.disabled = true;
+    try {
+      await api('auth/change-password', {
+        method: 'POST',
+        body: JSON.stringify({
+          currentPassword: formData.get('currentPassword'),
+          newPassword: formData.get('newPassword'),
+          confirmPassword: formData.get('confirmPassword')
+        })
+      });
+      closeProfileDrawerV7();
+      clearAuth('密码修改成功，请使用新密码重新登录。');
+    } catch (error) {
+      if (tip) tip.textContent = passwordChangeFailureMessageV6(error, false);
+    } finally {
+      if (button) button.disabled = false;
+    }
+  });
 
   mobileNavToggle?.addEventListener('click', () => {
     document.body.classList.toggle('nav-open');

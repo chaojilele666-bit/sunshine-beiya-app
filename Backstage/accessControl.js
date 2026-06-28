@@ -90,19 +90,28 @@ const PERMISSION_ALIASES = {
   companyProfile: 'companyProfile',
   ayis: 'ayis',
   ayi: 'ayis',
+  '阿姨管理': 'ayis',
   demands: 'demands',
+  '客户需求': 'demands',
   appointments: 'appointments',
+  '预约面试': 'appointments',
   appointmentRecords: 'appointmentRecords',
   applications: 'applications',
+  '接单申请': 'applications',
   orders: 'orders',
+  '订单跟进': 'orders',
   todos: 'todos',
   todo: 'todos',
   dispatches: 'orderDispatches',
   orderDispatches: 'orderDispatches',
+  '人工派单': 'orderDispatches',
   stores: 'stores',
+  '门店信息': 'stores',
   services: 'serviceModules',
   serviceModules: 'serviceModules',
-  banners: 'banners'
+  '服务中心': 'serviceModules',
+  banners: 'banners',
+  '首页轮播': 'banners'
 };
 
 const RESOURCE_PERMISSION_ALIASES = {

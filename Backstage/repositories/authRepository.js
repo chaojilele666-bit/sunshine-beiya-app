@@ -376,13 +376,9 @@ async function login({ identifier, password, ipAddress, userAgent }) {
     throw new AuthError('INVALID_CREDENTIALS', 'Phone or password is incorrect', 400);
   }
 
-  const account = await findBackstageByIdentifier(identifier, db);
+  const account = await findBackstageByIdentifier(identifier, db) || await findByIdentifier(identifier, db);
   if (!account) {
     throw new AuthError('ACCOUNT_NOT_FOUND', 'Phone or password is incorrect', 401);
-  }
-
-  if (!accessControl.isBackstageRole(account)) {
-    throw new AuthError('INVALID_CREDENTIALS', 'Phone or password is incorrect', 401);
   }
 
   const backstageAccount = await findById(account.id, db);
