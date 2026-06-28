@@ -495,18 +495,75 @@ async function logout(token, user) {
 function staffAccountResponse(row, temporaryPassword) {
   return {
     account_id: row.id,
+    id: row.id,
     backstage_profile_id: row.backstage_profile_id || null,
     name: row.backstage_name || row.username || row.phone,
+    username: row.username,
+    phone: row.phone,
     phone_masked: maskPhone(row.phone),
     role: row.role,
     store: row.store_id ? { id: row.store_id, name: row.store_name || '' } : null,
+    store_id: row.store_id || null,
     store_scope_ids: Array.isArray(row.store_scope_ids) ? row.store_scope_ids.map(Number) : [],
     organization_type: row.organization_type || 'backstage',
     permissions: Array.isArray(row.backstage_permissions) ? row.backstage_permissions : [],
     must_change_password: Boolean(row.must_change_password),
     account_status: normalizedAccountStatus(row),
+    status: row.status,
+    failed_login_count: Number(row.failed_login_count || 0),
+    locked_until: row.backstage_locked_until || row.locked_until || null,
+    last_login_at: row.last_login_at || null,
+    password_changed_at: row.password_changed_at || null,
+    created_by: row.created_by || null,
+    created_by_name: row.created_by_name || null,
+    created_at: row.created_at || null,
+    updated_at: row.updated_at || null,
     temporary_password: temporaryPassword
   };
+}
+
+async function listStaffAccounts(actor = {}) {
+  const result = await db.query(
+    `SELECT u.*,
+            ba.id AS backstage_profile_id,
+            ba.name AS backstage_name,
+            ba.role AS backstage_role,
+            ba.permissions AS backstage_permissions,
+            ba.store_id,
+            ba.organization_type,
+            ba.account_status,
+            ba.locked_until AS backstage_locked_until,
+            COALESCE(ba.must_change_password, u.must_change_password) AS must_change_password,
+            COALESCE(ba.password_changed_at, u.password_changed_at) AS password_changed_at,
+            COALESCE(ba.last_login_at, u.last_login_at) AS last_login_at,
+            COALESCE(ba.session_version, u.session_version) AS backstage_session_version,
+            COALESCE(scopes.store_scope_ids, ARRAY[]::integer[]) AS store_scope_ids,
+            s.name AS store_name,
+            ba.created_by,
+            creator.username AS created_by_name,
+            COALESCE(ba.created_at, u.created_at) AS created_at,
+            COALESCE(ba.updated_at, u.updated_at) AS updated_at
+     FROM user_accounts u
+     LEFT JOIN backstage_accounts ba
+       ON u.related_profile_type = 'backstage_accounts'
+      AND u.related_profile_id = ba.id::text
+     LEFT JOIN stores s ON s.id = ba.store_id
+     LEFT JOIN user_accounts creator ON creator.id = ba.created_by
+     LEFT JOIN (
+       SELECT account_id, array_agg(store_id ORDER BY store_id) AS store_scope_ids
+       FROM account_store_scopes
+       GROUP BY account_id
+     ) scopes ON scopes.account_id = u.id
+     WHERE u.role IN ('operator', 'boss', 'management', 'store_manager', 'store_staff')
+     ORDER BY u.id ASC`
+  );
+  return result.rows
+    .filter((row) => accessControl.isBackstageRole(row))
+    .filter((row) => accessControl.canManageAccountRecord(actor, Object.assign({}, safeUser(row), {
+      storeId: row.store_id,
+      store_id: row.store_id
+    })))
+    .map((row) => staffAccountResponse(row));
 }
 
 async function ensureUniqueStaffPhone(client, phone) {
@@ -592,6 +649,125 @@ async function createStaffAccount(payload = {}, actor = {}) {
       storeScopeIds
     });
     return staffAccountResponse(await findById(created.id, client), temporaryPassword);
+  });
+}
+
+async function updateStaffAccount(targetUserId, payload = {}, actor = {}) {
+  return db.transaction(async (client) => {
+    const account = await findById(targetUserId, client);
+    if (!account || !accessControl.isBackstageRole(account)) {
+      throw new AuthError('ACCOUNT_NOT_FOUND', 'Staff account does not exist', 404);
+    }
+    if (!accessControl.canManageAccountRecord(actor, account)) {
+      throw new AuthError('FORBIDDEN', 'Permission denied', 403);
+    }
+
+    const nextName = payload.name !== undefined ? String(payload.name || '').trim() : account.backstage_name;
+    const nextRole = payload.role !== undefined ? normalizeRole(payload.role) : account.role;
+    const nextStoreId = payload.storeId !== undefined || payload.store_id !== undefined
+      ? (payload.storeId || payload.store_id ? Number(payload.storeId || payload.store_id) : null)
+      : (account.store_id || null);
+    const nextOrganizationType = payload.organizationType || payload.organization_type || account.organization_type || 'backstage';
+    const nextPermissions = payload.permissions !== undefined
+      ? accessControl.normalizePermissionList(normalizePermissions(payload.permissions))
+      : (Array.isArray(account.backstage_permissions) ? account.backstage_permissions : []);
+    const nextAccountStatus = payload.accountStatus || payload.account_status || payload.status || normalizedAccountStatus(account);
+    const storeScopeIds = Array.from(new Set(
+      (nextStoreId ? [nextStoreId] : []).concat(normalizeStoreIds(payload.storeScopeIds || payload.store_scope_ids || payload.storeIds || payload.store_ids))
+    ));
+
+    accessControl.scopePayloadForUpdate(actor, 'accounts', {
+      role: nextRole,
+      storeId: nextStoreId,
+      permissions: nextPermissions
+    }, account);
+
+    if (account.related_profile_type !== 'backstage_accounts' || !account.related_profile_id) {
+      throw new AuthError('LEGACY_ACCOUNT_READONLY', 'Legacy account profile is incomplete', 400);
+    }
+    if (!nextName) throw new AuthError('INVALID_NAME', 'Name is required', 400);
+
+    await client.query(
+      `UPDATE backstage_accounts
+       SET name = $1,
+           role = $2,
+           permissions = $3,
+           status = $4,
+           account_status = $4,
+           store_id = $5,
+           organization_type = $6,
+           updated_by = $7
+       WHERE id = $8`,
+      [
+        nextName,
+        nextRole,
+        nextPermissions,
+        normalizeAccountStatus(nextAccountStatus),
+        nextStoreId,
+        nextOrganizationType,
+        actor && actor.id ? Number(actor.id) : null,
+        Number(account.related_profile_id)
+      ]
+    );
+    await client.query(
+      `UPDATE user_accounts
+       SET role = $1,
+           status = $2
+       WHERE id = $3`,
+      [nextRole, normalizeAccountStatus(nextAccountStatus), account.id]
+    );
+    await client.query('DELETE FROM account_store_scopes WHERE account_id = $1', [account.id]);
+    for (const scopedStoreId of storeScopeIds) {
+      await client.query(
+        `INSERT INTO account_store_scopes (account_id, store_id, created_by)
+         VALUES ($1,$2,$3)
+         ON CONFLICT (account_id, store_id) DO NOTHING`,
+        [account.id, scopedStoreId, actor && actor.id ? Number(actor.id) : null]
+      );
+    }
+    await bumpSessionVersion(client, account);
+    await client.query(
+      `UPDATE auth_sessions SET revoked_at = now() WHERE user_account_id = $1 AND revoked_at IS NULL`,
+      [account.id]
+    );
+    await writeAuthAudit(client, actor || null, 'update_staff_account', {
+      targetUserId: account.id,
+      role: nextRole,
+      accountStatus: normalizeAccountStatus(nextAccountStatus),
+      storeScopeIds
+    });
+    return staffAccountResponse(await findById(account.id, client));
+  });
+}
+
+async function updateOwnProfile(user, payload = {}) {
+  if (!user) throw new AuthError('UNAUTHORIZED', 'Login required', 401);
+  const name = String(payload.name || '').trim();
+  if (!name) throw new AuthError('INVALID_NAME', 'Name is required', 400);
+  return db.transaction(async (client) => {
+    const account = await findById(user.id, client);
+    if (!account) throw new AuthError('ACCOUNT_NOT_FOUND', 'Account does not exist', 404);
+    if (account.related_profile_type === 'backstage_accounts' && account.related_profile_id) {
+      await client.query(
+        `UPDATE backstage_accounts
+         SET name = $1,
+             updated_by = $2
+         WHERE id = $3`,
+        [name, account.id, Number(account.related_profile_id)]
+      );
+    } else {
+      const duplicate = await client.query(
+        `SELECT 1 FROM user_accounts WHERE username = $1 AND id <> $2 LIMIT 1`,
+        [name, account.id]
+      );
+      if (duplicate.rows.length) throw new AuthError('USERNAME_EXISTS', 'Name is already used', 409);
+      await client.query(
+        `UPDATE user_accounts SET username = $1 WHERE id = $2`,
+        [name, account.id]
+      );
+    }
+    await writeAuthAudit(client, account, 'update_own_profile', {});
+    return safeUser(await findById(account.id, client));
   });
 }
 
@@ -787,11 +963,14 @@ module.exports = {
   generateTemporaryPassword,
   getUserByToken,
   issueSession,
+  listStaffAccounts,
   login,
   logout,
   resetStaffPassword,
   safeUser,
   tokenHash,
   unlockStaffAccount,
+  updateOwnProfile,
+  updateStaffAccount,
   writeAuthAudit
 };

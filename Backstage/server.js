@@ -720,8 +720,24 @@ async function handleAuth(req, res, parts, currentUser) {
       return;
     }
 
+    if (action === 'profile' && req.method === 'PUT') {
+      if (!currentUser) {
+        send(res, 401, { ok: false, error: 'Login required' });
+        return;
+      }
+      const body = await readBody(req);
+      const user = await authRepository.updateOwnProfile(currentUser, body);
+      send(res, 200, { ok: true, user });
+      return;
+    }
+
     if (action === 'staff-accounts') {
       if (!requireAccountsAccess(res, currentUser)) return;
+      if (req.method === 'GET' && parts.length === 3) {
+        const accounts = await authRepository.listStaffAccounts(currentUser);
+        send(res, 200, { ok: true, accounts });
+        return;
+      }
       if (req.method === 'POST' && parts.length === 3) {
         const body = await readBody(req);
         const account = await authRepository.createStaffAccount(body, currentUser);
@@ -732,6 +748,12 @@ async function handleAuth(req, res, parts, currentUser) {
       const targetUserId = parts[3] ? Number(parts[3]) : null;
       const operation = parts[4];
       if (!targetUserId || !operation || req.method !== 'POST') {
+        if (targetUserId && !operation && req.method === 'PUT') {
+          const body = await readBody(req);
+          const account = await authRepository.updateStaffAccount(targetUserId, body, currentUser);
+          send(res, 200, { ok: true, account });
+          return;
+        }
         send(res, 404, { ok: false, error: 'Unknown staff account action' });
         return;
       }

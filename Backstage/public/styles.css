@@ -69,6 +69,146 @@ body.is-authed .login-view {
   margin-top: 26px;
 }
 
+/* V6 staff management and analytics interface */
+.login-remember {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #4b5563;
+}
+
+.login-help {
+  margin: 0;
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.v6-table {
+  overflow-x: auto;
+}
+
+.v6-table table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 920px;
+}
+
+.v6-table th,
+.v6-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid #e5e7eb;
+  text-align: left;
+  vertical-align: top;
+  font-size: 13px;
+}
+
+.v6-table th {
+  color: #374151;
+  background: #f9fafb;
+  font-weight: 700;
+}
+
+.permission-list.compact {
+  max-width: 220px;
+}
+
+.permission-checkboxes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+}
+
+.permission-checkboxes label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.temp-password-panel {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto auto auto;
+  gap: 12px;
+  align-items: center;
+  padding: 14px;
+  margin-bottom: 14px;
+  border: 1px solid #f59e0b;
+  border-radius: 8px;
+  background: #fffbeb;
+}
+
+.temp-password-panel code {
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: #111827;
+  color: #fff;
+  font-size: 15px;
+}
+
+.profile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.profile-card {
+  padding: 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.profile-card h3 {
+  margin: 0 0 10px;
+}
+
+.profile-card p {
+  margin: 6px 0;
+  color: #374151;
+}
+
+.v6-trend {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(32px, 1fr);
+  gap: 8px;
+  min-height: 180px;
+  align-items: end;
+  padding-top: 12px;
+}
+
+.v6-trend div {
+  display: grid;
+  grid-template-rows: 1fr auto auto;
+  gap: 4px;
+  min-height: 160px;
+  text-align: center;
+}
+
+.v6-trend i {
+  display: block;
+  align-self: end;
+  border-radius: 4px 4px 0 0;
+  background: #2563eb;
+}
+
+.v6-trend span,
+.v6-trend strong {
+  font-size: 12px;
+  color: #4b5563;
+}
+
+@media (max-width: 720px) {
+  .temp-password-panel {
+    grid-template-columns: 1fr;
+  }
+}
+
 .login-form {
   display: grid;
   gap: 14px;

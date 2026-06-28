@@ -1,7 +1,7 @@
 # V3 Acceptance Report
 
-Generated at: 2026-06-27T20:39:45.267Z
-Branch: V5
+Generated at: 2026-06-28T02:41:16.686Z
+Branch: V6
 
 ## Summary
 
@@ -86,12 +86,12 @@ Branch: V5
 | 1 | 全仓 JS node --check | PASS | 38 JS files checked |
 | 2 | JSON 解析 | PASS | 22 JSON files parsed |
 | 3 | WXML 标签检查 | PASS | 15 WXML files checked |
-| 4 | SQL UTF-8/BOM/乱码检查 | PASS | 14 SQL files checked |
-| 5 | 常见乱码搜索 | PASS | 130 text files scanned |
-| 6 | 敏感信息扫描 | PASS | 143 tracked/untracked candidates scanned |
+| 4 | SQL UTF-8/BOM/乱码检查 | PASS | 17 SQL files checked |
+| 5 | 常见乱码搜索 | PASS | 133 text files scanned |
+| 6 | 敏感信息扫描 | PASS | 146 tracked/untracked candidates scanned |
 | 7 | git diff --check | PASS | clean |
-| 8 | git status --short | PASS | 66 changed/untracked entries |
-| 9 | 临时数据库创建 | PASS | sunshine_beiya_v3_acceptance_1782592770157_9777f5 |
+| 8 | git status --short | PASS | 55 changed/untracked entries |
+| 9 | 临时数据库创建 | PASS | sunshine_beiya_v3_acceptance_1782614458433_ccc726 |
 | 10 | V001-V008 空库首次迁移 | PASS | V001__init_core_business_schema.sql, V002__backstage_resource_tables.sql, V003__auth_and_permissions.sql, V004__store_detail_fields.sql, V005__demand_matches.sql, V006__service_center_fields.sql, V007__company_profile.sql, V008__service_shortcuts.sql |
 | 11 | V001-V008 空库重复迁移 | PASS | V001__init_core_business_schema.sql, V002__backstage_resource_tables.sql, V003__auth_and_permissions.sql, V004__store_detail_fields.sql, V005__demand_matches.sql, V006__service_center_fields.sql, V007__company_profile.sql, V008__service_shortcuts.sql |
 | 12 | 空库迁移后门店不重复 | PASS | 0 duplicate store names |
@@ -109,12 +109,12 @@ Branch: V5
 | 24 | 小程序公开数据接口 | PASS | source=postgres, serviceModules=15 |
 | 25 | 服务项目停用、恢复 | PASS | serviceModule=15 |
 | 26 | 快捷入口修改、停用、恢复 | PASS | shortcut=11 |
-| 27 | 创建并验证阿姨上架/下架 | PASS | ayi=154 |
-| 28 | 客户提交需求和 token 校验 | PASS | demand=237 |
-| 29 | 后台推荐、重复推荐409、下架阿姨不可推荐 | PASS | match=89 |
-| 30 | 客户推荐列表、确认、重复操作409 | PASS | confirmed match=89 |
-| 31 | 客户拒绝与跨需求操作被拒绝 | PASS | secondDemand=238 |
+| 27 | 创建并验证阿姨上架/下架 | PASS | ayi=198 |
+| 28 | 客户提交需求和 token 校验 | PASS | demand=279 |
+| 29 | 后台推荐、重复推荐409、下架阿姨不可推荐 | PASS | match=94 |
+| 30 | 客户推荐列表、确认、重复操作409 | PASS | confirmed match=94 |
+| 31 | 客户拒绝与跨需求操作被拒绝 | PASS | secondDemand=280 |
 | 32 | audit_logs 写入 | PASS | 14 audit rows found before cleanup |
 | 33 | 原有门店和图片接口回归 | PASS | stores=4, publicStores=4 |
 | 34 | 测试数据清理 | PASS | V3 acceptance rows removed by prefix. |
-| 35 | 临时数据库清理 | PASS | sunshine_beiya_v3_acceptance_1782592770157_9777f5 |
+| 35 | 临时数据库清理 | PASS | sunshine_beiya_v3_acceptance_1782614458433_ccc726 |

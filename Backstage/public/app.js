@@ -4279,3 +4279,598 @@ window.addEventListener('hashchange', () => {
 });
 
 boot();
+
+// V6 staff management and analytics interface.
+(() => {
+  const ROLE_LABELS_V6 = {
+    boss: '管理',
+    management: '管理',
+    operator: '运营',
+    store_manager: '店长',
+    store_staff: '店员'
+  };
+  const STATUS_LABELS_V6 = {
+    active: '启用',
+    disabled: '停用',
+    locked: '锁定'
+  };
+  const ORG_LABELS_V6 = {
+    headquarters: '总部/运营中心',
+    operations_center: '总部/运营中心',
+    store: '门店',
+    backstage: '后台'
+  };
+  const DASHBOARD_METRICS_V6 = [
+    ['newAyis', '新增阿姨'],
+    ['newCustomers', '新增客户'],
+    ['newDemands', '新增需求'],
+    ['newAppointments', '新增面试'],
+    ['newFollowUps', '跟进数量'],
+    ['completedFollowUps', '完成跟进'],
+    ['effectiveOperations', '有效操作']
+  ];
+  const MODULES_V6 = [
+    ['dashboard', '首页经营数据'],
+    ['customers', '客户管理'],
+    ['ayis', '阿姨管理'],
+    ['demands', '客户需求'],
+    ['appointments', '面试安排'],
+    ['todos', '跟进待办'],
+    ['appointmentRecords', '预约记录'],
+    ['stores', '门店信息'],
+    ['exportInfo', '导出信息'],
+    ['serviceModules', '公司服务配置'],
+    ['accounts', '账号与权限'],
+    ['auditLogs', '审计日志']
+  ];
+  let v6Stores = [];
+  let v6StaffAccounts = [];
+  let v6OneTimePassword = null;
+  let v6ProfileData = null;
+
+  roleDisplayMap.boss = '管理';
+  roleDisplayMap.management = '管理';
+  roleDisplayMap.operator = '运营';
+  roleDisplayMap.store_manager = '店长';
+  roleDisplayMap.store_staff = '店员';
+  Object.assign(roleAccess, {
+    boss: ['dashboard', 'accounts', 'auditLogs', 'exportInfo', 'todos', 'companyProfile', 'ayis', 'demands', 'appointments', 'applications', 'orders', 'orderDispatches', 'stores', 'serviceModules', 'banners', 'profile'],
+    management: ['dashboard', 'accounts', 'auditLogs', 'exportInfo', 'todos', 'companyProfile', 'ayis', 'demands', 'appointments', 'applications', 'orders', 'orderDispatches', 'stores', 'serviceModules', 'banners', 'profile'],
+    operator: ['dashboard', 'accounts', 'exportInfo', 'todos', 'ayis', 'demands', 'appointments', 'applications', 'orders', 'orderDispatches', 'stores', 'serviceModules', 'banners', 'profile'],
+    store_manager: ['dashboard', 'accounts', 'todos', 'ayis', 'demands', 'appointments', 'applications', 'orders', 'orderDispatches', 'stores', 'profile'],
+    store_staff: ['dashboard', 'todos', 'ayis', 'demands', 'appointments', 'applications', 'orders', 'orderDispatches', 'stores', 'profile']
+  });
+  resources.profile = { title: '个人信息', desc: '查看当前账号资料、权限、授权门店和我的工作数据。', custom: 'profile' };
+  routeToResourceMap.profile = 'profile';
+  resourceToRouteMap.profile = 'profile';
+
+  function setupV6Shell() {
+    document.title = '北京阳光北亚家政后台';
+    const brand = document.querySelector('.login-brand');
+    if (brand) brand.textContent = '北京阳光北亚家政';
+    const loginTitle = document.querySelector('.login-card h1');
+    if (loginTitle) loginTitle.textContent = '后台登录';
+    const loginDesc = document.querySelector('.login-card p');
+    if (loginDesc) loginDesc.textContent = '使用手机号和密码登录。角色、门店和权限由后台账号决定。';
+    const identifier = loginForm.querySelector('[name="identifier"]');
+    if (identifier) {
+      identifier.placeholder = '请输入手机号';
+      identifier.autocomplete = 'tel';
+      const label = identifier.closest('.field')?.querySelector('label');
+      if (label) label.textContent = '手机号';
+      const remembered = localStorage.getItem('ygby_remembered_phone') || '';
+      if (remembered) identifier.value = remembered;
+    }
+    const passwordLabel = loginForm.querySelector('[name="password"]')?.closest('.field')?.querySelector('label');
+    if (passwordLabel) passwordLabel.textContent = '密码';
+    const loginButton = loginForm.querySelector('button[type="submit"]');
+    if (loginButton) loginButton.textContent = '登录';
+    if (!loginForm.querySelector('[name="rememberPhone"]')) {
+      loginForm.insertAdjacentHTML('beforeend', `
+        <label class="login-remember"><input type="checkbox" name="rememberPhone" checked> 记住手机号</label>
+        <p class="login-help">忘记密码请联系管理员</p>
+      `);
+    }
+    const title = document.querySelector('.topbar h1');
+    if (title) title.textContent = '北京阳光北亚家政后台';
+    const desc = document.querySelector('.topbar p');
+    if (desc) desc.textContent = '后台员工工作台，账号权限和数据范围由后端统一校验。';
+    if (!document.querySelector('[data-route="profile"]')) {
+      document.querySelector('.tabs')?.insertAdjacentHTML('beforeend', '<button class="tab" data-route="profile" data-resource="profile">个人信息</button>');
+    }
+    document.querySelector('[data-route="dashboard"]') && (document.querySelector('[data-route="dashboard"]').textContent = '每日数据');
+    document.querySelector('[data-route="accounts"]') && (document.querySelector('[data-route="accounts"]').textContent = '账号与权限');
+  }
+
+  function labelRoleV6(role) {
+    return ROLE_LABELS_V6[role] || role || '-';
+  }
+
+  function labelStatusV6(status) {
+    return STATUS_LABELS_V6[status] || status || '-';
+  }
+
+  function labelOrgV6(value) {
+    return ORG_LABELS_V6[value] || value || '待完善归属';
+  }
+
+  function fmtV6(value) {
+    return value ? formatDateTime(value) : '-';
+  }
+
+  function metricV6(source, key) {
+    return Number((source && source.metrics && source.metrics[key]) || 0);
+  }
+
+  function storeNameV6(storeId) {
+    const store = v6Stores.find((item) => Number(item.id) === Number(storeId));
+    return store ? store.name : (storeId ? `门店 ${storeId}` : '待完善归属');
+  }
+
+  function permissionLabelsV6(permissions = []) {
+    const set = new Set(Array.isArray(permissions) ? permissions : []);
+    return MODULES_V6.filter(([key]) => set.has(key)).map(([, label]) => label);
+  }
+
+  function permissionTagsV6(permissions = []) {
+    const labels = permissionLabelsV6(permissions);
+    return labels.length
+      ? labels.map((item) => `<span class="permission-tag">${escapeHtml(item)}</span>`).join('')
+      : '<span class="permission-tag empty">未授权模块</span>';
+  }
+
+  async function loadStoresV6() {
+    try {
+      v6Stores = await api('stores');
+    } catch (error) {
+      v6Stores = [];
+    }
+  }
+
+  function applyAuthShellV6() {
+    if (!currentUser || !roleAccess[currentUser.role]) {
+      document.body.classList.remove('is-authed');
+      return;
+    }
+    document.body.classList.add('is-authed');
+    currentUserLabel.textContent = `${currentUser.name || currentUser.username || currentUser.phoneMasked || '-'} / ${labelRoleV6(currentUser.role)}`;
+    const allowed = new Set(getAllowedResources().concat('profile'));
+    if (currentUser.mustChangePassword) {
+      allowed.clear();
+      allowed.add('profile');
+    }
+    document.querySelectorAll('.tab').forEach((tab) => {
+      tab.hidden = tab.dataset.route !== 'home' && !allowed.has(tab.dataset.resource);
+    });
+  }
+
+  applyAuthShell = applyAuthShellV6;
+
+  function getAllowedResourcesV6() {
+    if (!currentUser) return [];
+    const base = allowedResources.length ? allowedResources.filter((item) => resources[item]) : (roleAccess[currentUser.role] || []);
+    return Array.from(new Set(base.concat('profile')));
+  }
+
+  getAllowedResources = getAllowedResourcesV6;
+
+  loginForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    const formData = new FormData(loginForm);
+    const identifierValue = String(formData.get('identifier') || '').trim();
+    loginTip.textContent = '';
+    try {
+      const result = await api('auth/login', {
+        method: 'POST',
+        body: JSON.stringify({
+          identifier: identifierValue,
+          password: formData.get('password')
+        })
+      });
+      authToken = result.token;
+      localStorage.setItem('ygby_auth_token', authToken);
+      if (formData.get('rememberPhone')) localStorage.setItem('ygby_remembered_phone', identifierValue);
+      else localStorage.removeItem('ygby_remembered_phone');
+      const me = await api('auth/me');
+      currentUser = me.user;
+      allowedResources = me.allowedResources || [];
+      if (!me.canUseBackstage) {
+        clearAuth('该账号不能进入后台。');
+        return;
+      }
+      loginForm.querySelector('[name="password"]').value = '';
+      applyAuthShell();
+      setRoute(currentUser.mustChangePassword ? 'profile' : 'home');
+    } catch (error) {
+      loginTip.textContent = '手机号或密码错误';
+    }
+  }, true);
+
+  const legacyLoadResource = loadResource;
+  loadResource = async function loadResourceV6(resource = currentResource, options = {}) {
+    if (resource === 'dashboard') {
+      currentResource = 'dashboard';
+      currentRoute = 'dashboard';
+      currentRecord = null;
+      closeEditor();
+      markActiveRoute('dashboard');
+      sectionTitle.textContent = '每日数据看板';
+      sectionDesc.textContent = '按日期查看门店、员工和本人工作数据。';
+      document.querySelector('#addBtn').hidden = true;
+      await loadDashboard();
+      renderDashboard(dashboardData || {});
+      form.innerHTML = '<p class="muted">每日数据由后台操作快照统计，跨门店明细按角色权限过滤。</p>';
+      formTitle.textContent = '数据口径';
+      return;
+    }
+    if (resource === 'accounts') {
+      currentResource = 'accounts';
+      currentRoute = 'accounts';
+      currentRecord = null;
+      closeEditor();
+      markActiveRoute('accounts');
+      sectionTitle.textContent = '账号与权限';
+      sectionDesc.textContent = '创建员工账号、分配模块权限、管理状态和会话。';
+      document.querySelector('#addBtn').hidden = false;
+      await loadStoresV6();
+      const result = await api('auth/staff-accounts');
+      v6StaffAccounts = result.accounts || [];
+      cache = v6StaffAccounts;
+      renderAccountsList();
+      form.innerHTML = '<p class="muted">创建账号后临时密码只显示一次；关闭提示后不能再次查看。</p>';
+      formTitle.textContent = '账号操作';
+      return;
+    }
+    if (resource === 'profile') {
+      currentResource = 'profile';
+      currentRoute = 'profile';
+      currentRecord = null;
+      closeEditor();
+      markActiveRoute('profile');
+      sectionTitle.textContent = currentUser && currentUser.mustChangePassword ? '首次修改密码' : '个人信息';
+      sectionDesc.textContent = currentUser && currentUser.mustChangePassword
+        ? '临时密码登录后必须先修改密码，改密前不能访问其他后台页面。'
+        : '查看本人资料、权限、授权门店和我的工作数据。';
+      document.querySelector('#addBtn').hidden = true;
+      await loadStoresV6();
+      const [me, work] = await Promise.all([api('auth/me'), api('analytics/my')]);
+      currentUser = me.user;
+      allowedResources = me.allowedResources || allowedResources;
+      v6ProfileData = work;
+      renderProfileV6();
+      renderProfileFormV6();
+      editor.classList.add('is-open');
+      layout.classList.add('editor-open');
+      return;
+    }
+    return legacyLoadResource(resource, options);
+  };
+
+  const legacyRenderRoute = renderRoute;
+  renderRoute = async function renderRouteV6() {
+    if (!currentUser || !roleAccess[currentUser.role]) return;
+    if (currentUser.mustChangePassword && getRouteFromHash() !== 'profile') {
+      setRoute('profile');
+      return;
+    }
+    return legacyRenderRoute();
+  };
+
+  loadDashboard = async function loadDashboardV6(nextFilters = {}) {
+    dashboardFilters = Object.assign({}, dashboardFilters, nextFilters);
+    const query = dashboardQueryString();
+    dashboardData = await api(`analytics${query ? `?${query}` : ''}`);
+    if (dashboardData && dashboardData.range) {
+      dashboardFilters.preset = dashboardData.range.preset || dashboardFilters.preset;
+      dashboardFilters.startDate = dashboardData.range.startDate || dashboardFilters.startDate;
+      dashboardFilters.endDate = dashboardData.range.endDate || dashboardFilters.endDate;
+    }
+    return dashboardData;
+  };
+
+  renderDashboard = function renderDashboardV6(data = {}) {
+    const overview = data.metrics ? data : {};
+    const stores = data.stores || [];
+    const staff = data.staff || [];
+    const trends = data.trends || [];
+    list.innerHTML = `
+      ${renderDashboardFilters(data.range || {})}
+      <div class="metric-grid">
+        ${DASHBOARD_METRICS_V6.filter(([key]) => key !== 'completedFollowUps').map(([key, label]) => `
+          <button type="button" class="metric-card ${dashboardFilters.metric === key ? 'is-active' : ''}" data-action="dashboard-metric" data-metric="${key}">
+            <span>${label}</span>
+            <strong>${metricV6(overview, key)}</strong>
+          </button>
+        `).join('')}
+      </div>
+      <div class="dashboard-grid">
+        ${renderTrendV6('阿姨新增趋势', trends, 'newAyis')}
+        ${renderTrendV6('客户新增趋势', trends, 'newCustomers')}
+        ${renderTrendV6('需求新增趋势', trends, 'newDemands')}
+        ${renderStoreCompareV6(stores)}
+      </div>
+      ${renderDashboardTableV6('门店统计', ['门店', '新增阿姨', '新增客户', '新增需求', '新增面试', '新增预约', '跟进记录', '有效操作'], stores.map((row) => [
+        row.name || '待完善归属',
+        metricV6(row, 'newAyis'),
+        metricV6(row, 'newCustomers'),
+        metricV6(row, 'newDemands'),
+        metricV6(row, 'newInterviews') || metricV6(row, 'newAppointments'),
+        metricV6(row, 'newAppointments'),
+        metricV6(row, 'newFollowUps'),
+        metricV6(row, 'effectiveOperations')
+      ]))}
+      ${renderDashboardTableV6('员工统计', ['姓名', '角色', '所属门店', '新增阿姨', '新增客户', '新增需求', '新增面试', '新增预约', '跟进记录', '有效操作', '最近操作时间'], staff.map((row) => [
+        row.name || '未知员工',
+        labelRoleV6(row.role),
+        storeNameV6(row.storeId),
+        metricV6(row, 'newAyis'),
+        metricV6(row, 'newCustomers'),
+        metricV6(row, 'newDemands'),
+        metricV6(row, 'newInterviews') || metricV6(row, 'newAppointments'),
+        metricV6(row, 'newAppointments'),
+        metricV6(row, 'newFollowUps'),
+        metricV6(row, 'effectiveOperations'),
+        fmtV6(row.lastOperationAt)
+      ]))}
+    `;
+  };
+
+  function renderTrendV6(title, rows, metricKey) {
+    const values = rows.map((row) => metricV6(row, metricKey));
+    const max = Math.max(1, ...values);
+    return `
+      <section class="dashboard-card">
+        <div class="dashboard-card-head"><h3>${escapeHtml(title)}</h3><p>与当前日期筛选一致</p></div>
+        <div class="v6-trend">
+          ${rows.map((row) => {
+            const value = metricV6(row, metricKey);
+            return `<div><i style="height:${Math.max(4, value / max * 96)}%"></i><span>${escapeHtml(String(row.date || '').slice(5))}</span><strong>${value}</strong></div>`;
+          }).join('') || '<p class="muted">暂无趋势数据</p>'}
+        </div>
+      </section>
+    `;
+  }
+
+  function renderStoreCompareV6(rows) {
+    const max = Math.max(1, ...rows.map((row) => metricV6(row, 'effectiveOperations')));
+    return `
+      <section class="dashboard-card">
+        <div class="dashboard-card-head"><h3>门店有效操作对比</h3><p>公司合计 = 门店 + 总部/运营中心 + 待完善归属</p></div>
+        <div class="dashboard-bars">
+          ${rows.map((row) => {
+            const value = metricV6(row, 'effectiveOperations');
+            return `<button type="button" class="dashboard-bar-row" data-action="dashboard-store" data-store="${escapeHtml(row.storeId || '')}">
+              <span>${escapeHtml(row.name || '待完善归属')}</span><i style="width:${Math.max(4, value / max * 100)}%"></i><strong>${value}</strong>
+            </button>`;
+          }).join('') || '<p class="muted">暂无门店统计</p>'}
+        </div>
+      </section>
+    `;
+  }
+
+  function renderDashboardTableV6(title, headers, rows) {
+    return `
+      <section class="dashboard-table v6-table">
+        <h3>${escapeHtml(title)}</h3>
+        <table>
+          <thead><tr>${headers.map((item) => `<th>${escapeHtml(item)}</th>`).join('')}</tr></thead>
+          <tbody>${rows.length ? rows.map((row) => `<tr>${row.map((item) => `<td>${escapeHtml(item)}</td>`).join('')}</tr>`).join('') : `<tr><td colspan="${headers.length}">暂无数据</td></tr>`}</tbody>
+        </table>
+      </section>
+    `;
+  }
+
+  function renderAccountsListV6() {
+    const rows = v6StaffAccounts;
+    list.innerHTML = `
+      ${v6OneTimePassword ? `
+        <section class="temp-password-panel">
+          <div><strong>临时密码只显示一次</strong><p>${escapeHtml(v6OneTimePassword.name)} / ${escapeHtml(v6OneTimePassword.phone_masked || '')}</p></div>
+          <code>${escapeHtml(v6OneTimePassword.temporary_password)}</code>
+          <button type="button" data-action="copy-temp-password">复制</button>
+          <button type="button" class="secondary" data-action="close-temp-password">关闭</button>
+        </section>
+      ` : ''}
+      <section class="dashboard-table v6-table">
+        <h3>后台员工账号</h3>
+        <table>
+          <thead>
+            <tr><th>姓名</th><th>手机号</th><th>角色</th><th>所属组织</th><th>所属门店</th><th>权限摘要</th><th>状态</th><th>最近登录</th><th>密码修改时间</th><th>创建人</th><th>创建时间</th><th>操作</th></tr>
+          </thead>
+          <tbody>
+            ${rows.length ? rows.map((item) => `
+              <tr>
+                <td>${escapeHtml(item.name || '-')}</td>
+                <td>${escapeHtml(item.phone_masked || item.phone || '-')}</td>
+                <td>${escapeHtml(labelRoleV6(item.role))}</td>
+                <td>${escapeHtml(labelOrgV6(item.organization_type))}</td>
+                <td>${escapeHtml(item.store?.name || storeNameV6(item.store_id))}</td>
+                <td><div class="permission-list compact">${permissionTagsV6(item.permissions)}</div></td>
+                <td><span class="status-badge ${getStatusClass(labelStatusV6(item.account_status))}">${escapeHtml(labelStatusV6(item.account_status))}</span></td>
+                <td>${escapeHtml(fmtV6(item.last_login_at))}</td>
+                <td>${escapeHtml(fmtV6(item.password_changed_at))}</td>
+                <td>${escapeHtml(item.created_by_name || '-')}</td>
+                <td>${escapeHtml(fmtV6(item.created_at))}</td>
+                <td class="record-actions">
+                  <button type="button" data-action="staff-edit" data-id="${item.account_id}">编辑</button>
+                  <button type="button" data-action="staff-reset-password" data-id="${item.account_id}">重置密码</button>
+                  <button type="button" data-action="staff-disable" data-id="${item.account_id}">停用</button>
+                  <button type="button" data-action="staff-unlock" data-id="${item.account_id}">启用/解锁</button>
+                  <button type="button" data-action="staff-force-logout" data-id="${item.account_id}">强制退出</button>
+                </td>
+              </tr>
+            `).join('') : '<tr><td colspan="12">暂无可管理账号</td></tr>'}
+          </tbody>
+        </table>
+      </section>
+    `;
+  }
+  renderAccountsList = renderAccountsListV6;
+
+  function renderStaffAccountFormV6(record = null) {
+    currentRecord = record;
+    form.dataset.mode = 'staff-account';
+    formTitle.textContent = record ? '编辑账号' : '新增账号';
+    const permissions = new Set(record?.permissions || []);
+    form.innerHTML = `
+      <div class="field"><label>姓名</label><input name="name" required value="${escapeHtml(record?.name || '')}"></div>
+      <div class="field"><label>手机号</label><input name="phone" ${record ? 'disabled' : 'required'} value="${escapeHtml(record?.phone || '')}"></div>
+      <div class="field"><label>角色</label><select name="role">${['operator', 'store_manager', 'store_staff'].map((role) => `<option value="${role}" ${record?.role === role ? 'selected' : ''}>${labelRoleV6(role)}</option>`).join('')}</select></div>
+      <div class="field"><label>所属组织</label><select name="organization_type"><option value="backstage">后台</option><option value="headquarters" ${record?.organization_type === 'headquarters' ? 'selected' : ''}>总部/运营中心</option><option value="store" ${record?.organization_type === 'store' ? 'selected' : ''}>门店</option></select></div>
+      <div class="field"><label>所属门店</label><select name="store_id"><option value="">待完善归属</option>${v6Stores.map((store) => `<option value="${store.id}" ${Number(record?.store_id) === Number(store.id) ? 'selected' : ''}>${escapeHtml(store.name)}</option>`).join('')}</select></div>
+      <div class="field"><label>账号状态</label><select name="account_status"><option value="active">启用</option><option value="disabled" ${record?.account_status === 'disabled' ? 'selected' : ''}>停用</option><option value="locked" ${record?.account_status === 'locked' ? 'selected' : ''}>锁定</option></select></div>
+      <div class="field"><label>模块权限</label><div class="permission-checkboxes">${MODULES_V6.map(([key, label]) => `<label><input type="checkbox" name="permissions" value="${key}" ${permissions.has(key) ? 'checked' : ''}> ${label}</label>`).join('')}</div></div>
+      <button type="submit">${record ? '保存账号' : '创建账号'}</button>
+    `;
+  }
+
+  const legacyOpenEditor = openEditor;
+  openEditor = function openEditorV6(record = null) {
+    if (currentResource === 'accounts') {
+      renderStaffAccountFormV6(record);
+      editor.classList.add('is-open');
+      layout.classList.add('editor-open');
+      return;
+    }
+    return legacyOpenEditor(record);
+  };
+
+  function renderProfileV6() {
+    const user = currentUser || {};
+    const metrics = v6ProfileData?.overview?.metrics || v6ProfileData?.metrics || {};
+    list.innerHTML = `
+      <section class="profile-grid">
+        <article class="profile-card">
+          <h3>账号资料</h3>
+          <p>姓名：${escapeHtml(user.name || '-')}</p>
+          <p>手机号：${escapeHtml(user.phoneMasked || user.phone_masked || '-')}</p>
+          <p>角色：${escapeHtml(labelRoleV6(user.role))}</p>
+          <p>所属组织：${escapeHtml(labelOrgV6(user.organizationType))}</p>
+          <p>所属门店：${escapeHtml(user.store?.name || storeNameV6(user.storeId))}</p>
+          <p>授权门店：${escapeHtml((user.storeScopeIds || []).map(storeNameV6).join('、') || '待完善归属')}</p>
+          <p>账号状态：${escapeHtml(labelStatusV6(user.accountStatus || user.status))}</p>
+          <p>最近登录时间：${escapeHtml(fmtV6(user.lastLoginAt))}</p>
+          <p>密码修改时间：${escapeHtml(fmtV6(user.passwordChangedAt))}</p>
+          <p>创建时间：${escapeHtml(fmtV6(user.createdAt))}</p>
+        </article>
+        <article class="profile-card">
+          <h3>权限列表</h3>
+          <div class="permission-list">${permissionTagsV6(user.permissions)}</div>
+        </article>
+      </section>
+      <section class="dashboard-table v6-table">
+        <h3>我的工作数据</h3>
+        <table>
+          <thead><tr>${DASHBOARD_METRICS_V6.map(([, label]) => `<th>${label}</th>`).join('')}<th>最近操作时间</th></tr></thead>
+          <tbody><tr>${DASHBOARD_METRICS_V6.map(([key]) => `<td>${Number(metrics[key] || 0)}</td>`).join('')}<td>${escapeHtml(fmtV6(v6ProfileData?.overview?.lastOperationAt || v6ProfileData?.lastOperationAt))}</td></tr></tbody>
+        </table>
+      </section>
+    `;
+  }
+
+  function renderProfileFormV6() {
+    form.dataset.mode = currentUser?.mustChangePassword ? 'first-change-password' : 'profile';
+    formTitle.textContent = currentUser?.mustChangePassword ? '首次修改密码' : '个人操作';
+    form.innerHTML = `
+      ${currentUser?.mustChangePassword ? '<p class="account-note">当前账号必须先修改临时密码，修改成功后请重新登录。</p>' : `
+        <div class="field"><label>姓名</label><input name="name" value="${escapeHtml(currentUser?.name || '')}"></div>
+        <button type="submit">保存个人资料</button>
+      `}
+      <hr>
+      <div class="field"><label>当前密码</label><input name="currentPassword" type="password" autocomplete="current-password"></div>
+      <div class="field"><label>新密码</label><input name="newPassword" type="password" autocomplete="new-password"></div>
+      <div class="field"><label>确认新密码</label><input name="confirmPassword" type="password" autocomplete="new-password"></div>
+      <button type="button" data-action="profile-change-password">修改密码</button>
+    `;
+  }
+
+  list.addEventListener('click', async (event) => {
+    const button = event.target.closest('button');
+    if (!button) return;
+    const action = button.dataset.action;
+    if (!action || !action.startsWith('staff-') && !['copy-temp-password', 'close-temp-password'].includes(action)) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    if (action === 'copy-temp-password' && v6OneTimePassword) {
+      await navigator.clipboard?.writeText(v6OneTimePassword.temporary_password);
+      alert('已复制临时密码');
+      return;
+    }
+    if (action === 'close-temp-password') {
+      v6OneTimePassword = null;
+      renderAccountsList();
+      return;
+    }
+    const id = Number(button.dataset.id);
+    const account = v6StaffAccounts.find((item) => Number(item.account_id) === id);
+    if (action === 'staff-edit') {
+      openEditor(account);
+      return;
+    }
+    const operationMap = {
+      'staff-reset-password': 'reset-password',
+      'staff-disable': 'disable',
+      'staff-unlock': 'unlock',
+      'staff-force-logout': 'force-logout'
+    };
+    if (!operationMap[action]) return;
+    const result = await api(`auth/staff-accounts/${id}/${operationMap[action]}`, { method: 'POST' });
+    if (result.account?.temporary_password) v6OneTimePassword = result.account;
+    await loadResource('accounts');
+  }, true);
+
+  form.addEventListener('click', async (event) => {
+    const button = event.target.closest('button[data-action="profile-change-password"]');
+    if (!button) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    const formData = new FormData(form);
+    await api('auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify({
+        currentPassword: formData.get('currentPassword'),
+        newPassword: formData.get('newPassword'),
+        confirmPassword: formData.get('confirmPassword')
+      })
+    });
+    clearAuth('密码已修改，请重新登录。');
+  }, true);
+
+  form.addEventListener('submit', async (event) => {
+    if (!['staff-account', 'profile', 'first-change-password'].includes(form.dataset.mode)) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    const formData = new FormData(form);
+    if (form.dataset.mode === 'staff-account') {
+      const payload = {
+        name: formData.get('name'),
+        phone: formData.get('phone'),
+        role: formData.get('role'),
+        organization_type: formData.get('organization_type'),
+        store_id: formData.get('store_id'),
+        account_status: formData.get('account_status'),
+        permissions: formData.getAll('permissions')
+      };
+      const path = currentRecord ? `auth/staff-accounts/${currentRecord.account_id}` : 'auth/staff-accounts';
+      const result = await api(path, {
+        method: currentRecord ? 'PUT' : 'POST',
+        body: JSON.stringify(payload)
+      });
+      if (result.account?.temporary_password) v6OneTimePassword = result.account;
+      await loadResource('accounts');
+      return;
+    }
+    if (form.dataset.mode === 'profile') {
+      const result = await api('auth/profile', {
+        method: 'PUT',
+        body: JSON.stringify({ name: formData.get('name') })
+      });
+      currentUser = result.user;
+      applyAuthShell();
+      await loadResource('profile');
+    }
+  }, true);
+
+  setupV6Shell();
+})();
