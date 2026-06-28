@@ -397,6 +397,27 @@ function sendApiError(res, error, fallbackMessage = 'Request failed') {
   sendError(res, error.status || 400, fallbackMessage, error.message);
 }
 
+function requireAccountsAccess(res, user) {
+  if (!user) {
+    send(res, 401, { ok: false, error: 'Login required' });
+    return false;
+  }
+  const authz = accessControl.canAccessModule(user, 'accounts');
+  if (!authz.ok) {
+    send(res, authz.status, { ok: false, error: authz.message });
+    return false;
+  }
+  return true;
+}
+
+function isFirstPasswordChangeAllowed(resource, parts, method) {
+  if (resource !== 'auth') return false;
+  const action = parts[2];
+  return (action === 'me' && method === 'GET')
+    || (action === 'logout' && method === 'POST')
+    || (action === 'change-password' && method === 'POST');
+}
+
 async function emitResourceNotifications(resource, record, before = null) {
   try {
     await db.transaction(async (client) => {
@@ -642,16 +663,17 @@ async function handleAuth(req, res, parts, currentUser) {
       return;
     }
 
+    if (currentUser && currentUser.mustChangePassword && !isFirstPasswordChangeAllowed('auth', parts, req.method)) {
+      send(res, 403, {
+        ok: false,
+        code: 'PASSWORD_CHANGE_REQUIRED',
+        error: 'Password change required'
+      });
+      return;
+    }
+
     if (action === 'miniprogram-users' && req.method === 'GET') {
-      if (!currentUser) {
-        send(res, 401, { ok: false, error: 'Login required' });
-        return;
-      }
-      const authz = accessControl.canAccessModule(currentUser, 'accounts');
-      if (!authz.ok) {
-        send(res, authz.status, { ok: false, error: authz.message });
-        return;
-      }
+      if (!requireAccountsAccess(res, currentUser)) return;
       send(res, 200, {
         ok: true,
         users: await miniprogramAuthRepository.listMiniprogramUsers()
@@ -685,8 +707,54 @@ async function handleAuth(req, res, parts, currentUser) {
         return;
       }
       const body = await readBody(req);
-      const user = await authRepository.changePassword(currentUser, body.currentPassword, body.newPassword);
+      const user = await authRepository.changePassword(
+        currentUser,
+        body.currentPassword,
+        body.newPassword,
+        body.confirmPassword
+      );
       send(res, 200, { ok: true, user });
+      return;
+    }
+
+    if (action === 'staff-accounts') {
+      if (!requireAccountsAccess(res, currentUser)) return;
+      if (req.method === 'POST' && parts.length === 3) {
+        const body = await readBody(req);
+        const account = await authRepository.createStaffAccount(body, currentUser);
+        send(res, 201, { ok: true, account });
+        return;
+      }
+
+      const targetUserId = parts[3] ? Number(parts[3]) : null;
+      const operation = parts[4];
+      if (!targetUserId || !operation || req.method !== 'POST') {
+        send(res, 404, { ok: false, error: 'Unknown staff account action' });
+        return;
+      }
+
+      if (operation === 'reset-password') {
+        const account = await authRepository.resetStaffPassword(targetUserId, currentUser);
+        send(res, 200, { ok: true, account });
+        return;
+      }
+      if (operation === 'disable') {
+        const account = await authRepository.disableStaffAccount(targetUserId, currentUser);
+        send(res, 200, { ok: true, account });
+        return;
+      }
+      if (operation === 'unlock') {
+        const account = await authRepository.unlockStaffAccount(targetUserId, currentUser);
+        send(res, 200, { ok: true, account });
+        return;
+      }
+      if (operation === 'force-logout') {
+        const account = await authRepository.forceLogoutStaffAccount(targetUserId, currentUser);
+        send(res, 200, { ok: true, account });
+        return;
+      }
+
+      send(res, 404, { ok: false, error: 'Unknown staff account action' });
       return;
     }
 
@@ -709,6 +777,15 @@ async function handleApi(req, res) {
 
   if (resource === 'auth') {
     await handleAuth(req, res, parts, currentUser);
+    return;
+  }
+
+  if (currentUser && currentUser.mustChangePassword && !isFirstPasswordChangeAllowed(resource, parts, req.method)) {
+    send(res, 403, {
+      ok: false,
+      code: 'PASSWORD_CHANGE_REQUIRED',
+      error: 'Password change required'
+    });
     return;
   }
 
