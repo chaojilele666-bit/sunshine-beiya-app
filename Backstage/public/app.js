@@ -862,7 +862,7 @@ const profileDrawerClose = document.querySelector('#profileDrawerClose');
 
 const roleAccess = {
   boss: ['dashboard', 'accounts', 'auditLogs', 'exportInfo', 'todos', 'companyProfile', 'ayis', 'demands', 'appointments', 'applications', 'orders', 'orderDispatches', 'stores', 'serviceModules', 'banners'],
-  operator: ['exportInfo', 'todos', 'ayis', 'demands', 'appointments', 'applications', 'orders', 'orderDispatches', 'stores', 'serviceModules', 'banners']
+  operator: ['todos', 'ayis', 'demands', 'appointments', 'applications', 'orders', 'orderDispatches', 'stores', 'serviceModules', 'banners']
 };
 
 const demandCategories = [
@@ -4437,7 +4437,7 @@ boot();
   Object.assign(roleAccess, {
     boss: ['dashboard', 'accounts', 'auditLogs', 'exportInfo', 'todos', 'companyProfile', 'ayis', 'demands', 'appointments', 'applications', 'orders', 'orderDispatches', 'stores', 'serviceModules', 'banners', 'profile', 'changePassword'],
     management: ['dashboard', 'accounts', 'auditLogs', 'exportInfo', 'todos', 'companyProfile', 'ayis', 'demands', 'appointments', 'applications', 'orders', 'orderDispatches', 'stores', 'serviceModules', 'banners', 'profile', 'changePassword'],
-    operator: ['dashboard', 'accounts', 'exportInfo', 'todos', 'ayis', 'demands', 'appointments', 'applications', 'orders', 'orderDispatches', 'stores', 'serviceModules', 'banners', 'profile', 'changePassword'],
+    operator: ['dashboard', 'accounts', 'todos', 'ayis', 'demands', 'appointments', 'applications', 'orders', 'orderDispatches', 'stores', 'serviceModules', 'banners', 'profile', 'changePassword'],
     store_manager: ['dashboard', 'accounts', 'todos', 'ayis', 'demands', 'appointments', 'applications', 'orders', 'orderDispatches', 'stores', 'profile', 'changePassword'],
     store_staff: ['dashboard', 'todos', 'ayis', 'demands', 'appointments', 'applications', 'orders', 'orderDispatches', 'stores', 'profile', 'changePassword']
   });

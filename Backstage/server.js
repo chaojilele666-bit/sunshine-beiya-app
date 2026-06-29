@@ -971,7 +971,7 @@ async function handleApi(req, res) {
   if (resource === 'auditLogs' && req.method === 'GET') {
     const authz = accessControl.canAccessResource(currentUser, resource, req.method);
     if (!authz.ok) {
-      send(res, authz.status, { ok: false, error: authz.message });
+      send(res, authz.status, { ok: false, error: '您没有访问审计日志的权限' });
       return;
     }
     try {
@@ -993,7 +993,7 @@ async function handleApi(req, res) {
   if (resource === 'exportInfo' && req.method === 'GET') {
     const authz = accessControl.canAccessResource(currentUser, 'exportInfo', req.method);
     if (!authz.ok) {
-      send(res, authz.status, { ok: false, error: authz.message });
+      send(res, authz.status, { ok: false, error: '您没有导出信息的权限' });
       return;
     }
     try {

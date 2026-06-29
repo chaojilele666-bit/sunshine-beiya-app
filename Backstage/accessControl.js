@@ -8,15 +8,20 @@ const BUSINESS_RESOURCES = new Set([
   'orderDispatches',
   'stores',
   'serviceModules',
-  'banners',
-  'exportInfo'
+  'banners'
 ]);
 
 const MANAGEMENT_RESOURCES = new Set([
   'dashboard',
   'accounts',
   'auditLogs',
-  'companyProfile'
+  'companyProfile',
+  'exportInfo'
+]);
+
+const MANAGEMENT_ONLY_RESOURCES = new Set([
+  'auditLogs',
+  'exportInfo'
 ]);
 
 const BACKSTAGE_RESOURCES = new Set([
@@ -52,7 +57,6 @@ const OPERATOR_DEFAULT_RESOURCES = [
   'todos',
   'appointmentRecords',
   'stores',
-  'exportInfo',
   'serviceModules',
   'applications',
   'orders',
@@ -187,7 +191,7 @@ function allowedResourcesForUser(user) {
   if (role === 'boss') return [...ALL_BACKSTAGE_RESOURCES];
 
   const configured = configuredResources(user);
-  if (configured.length) return configured;
+  if (configured.length) return configured.filter((resource) => !MANAGEMENT_ONLY_RESOURCES.has(requiredPermissionForResource(resource)));
 
   if (role === 'operator') {
     return user.hasBackstageProfile ? [] : [...OPERATOR_DEFAULT_RESOURCES];
@@ -206,6 +210,9 @@ function canAccessModule(user, resource) {
   const role = canonicalRole(user.role);
   if (role === 'boss') return { ok: true };
   if (!isBackstageRole(user)) return { ok: false, status: 403, message: 'Permission denied' };
+  if (MANAGEMENT_ONLY_RESOURCES.has(requiredPermissionForResource(resource))) {
+    return { ok: false, status: 403, message: 'Permission denied' };
+  }
   if (role === 'store_staff' && resource === 'accounts') {
     return { ok: false, status: 403, message: 'Permission denied' };
   }
