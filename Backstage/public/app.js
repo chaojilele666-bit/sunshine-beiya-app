@@ -1568,10 +1568,11 @@ async function renderServiceModuleSectionHome(section) {
   closeEditor();
   markActiveRoute(section.route);
   sectionTitle.textContent = section.title;
-  sectionDesc.textContent = `${section.desc} 点击一个小功能后进入单条查看和编辑。`;
-  document.querySelector('#addBtn').hidden = section.moduleType === 'service' && !section.filterTargetType;
+  sectionDesc.textContent = section.desc;
+  document.querySelector('#addBtn').hidden = false;
   formTitle.textContent = '页面说明';
-  form.innerHTML = '<p class="muted">本页只显示当前模块下已有数据生成的小功能入口，不混入其他类型数据。</p>';
+  form.innerHTML = '<p class="muted">可以在这里新增、编辑或删除当前服务类型。首页、服务页、需求表单和阿姨资料会读取同一套服务类型数据。</p>';
+
   cache = await api(getServiceModuleApiPath());
   if (section.filterTargetType) {
     cache = cache.filter((item) => item.targetType === section.filterTargetType);
@@ -1580,10 +1581,26 @@ async function renderServiceModuleSectionHome(section) {
     cache = cache.filter((item) => item.targetValue === section.filterTargetValue);
   }
 
+  const canInlineManage = section.moduleType === 'service' && !section.filterTargetType && !section.filterTargetValue;
   const cards = cache.map((item) => {
     const subtitle = item.moduleType === 'shortcut'
       ? displaySelectOption('targetType', item.targetType || 'none')
       : item.summary || item.iconText || '';
+    if (canInlineManage) {
+      return `
+        <article class="record">
+          <div>
+            <div class="record-title">${escapeHtml(item.title || `记录 ${item.id}`)}</div>
+            <div class="record-line">${escapeHtml(subtitle || `排序 ${item.sort || 0}`)}</div>
+            <div class="record-line">排序：${escapeHtml(item.sort || 0)} / 显示：${item.visible === false ? '否' : '是'}</div>
+          </div>
+          <div class="record-actions">
+            <button data-action="edit" data-id="${item.id}">编辑</button>
+            <button class="delete" data-action="delete" data-id="${item.id}">删除</button>
+          </div>
+        </article>
+      `;
+    }
     return `
       <button class="module-card" data-action="route-card" data-route="${escapeHtml(`${section.route}?item=${item.id}`)}">
         <span>${escapeHtml(item.title || `记录 ${item.id}`)}</span>
@@ -1601,7 +1618,7 @@ async function renderServiceModuleSectionHome(section) {
         <span>${cache.length} 个小功能</span>
       </div>
     </div>
-    <div class="home-grid">
+    <div class="${canInlineManage ? 'record-list' : 'home-grid'}">
       ${cards || '<p class="muted">当前模块暂无可编辑数据。</p>'}
     </div>
   `;
@@ -1693,10 +1710,6 @@ async function renderRoute() {
   if (!currentUser || !roleAccess[currentUser.role]) return;
   const parsed = parseHashRoute();
   const route = parsed.route;
-  if (route === 'appointments') {
-    setRoute('demands-interviews');
-    return;
-  }
   if (route === 'company') {
     setRoute('company-services/common-info');
     return;
@@ -4838,7 +4851,13 @@ boot();
       layout.classList.add('editor-open');
       return;
     }
-    return legacyLoadResource(resource, options);
+    const result = await legacyLoadResource(resource, options);
+    if (resource === 'appointments' && (options.route || currentRoute) === 'appointments') {
+      sectionTitle.textContent = '预约记录';
+      sectionDesc.textContent = '查看客户预约记录，保留现有预约数据和权限范围。';
+      formTitle.textContent = '新增预约记录';
+    }
+    return result;
   };
 
   const legacyRenderRoute = renderRoute;
