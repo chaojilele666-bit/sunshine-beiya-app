@@ -34,6 +34,11 @@
       <text class="identity-switch" bindtap="switchRole">切换身份</text>
     </view>
 
+    <view wx:if="{{backendError}}" class="empty card">
+      <view class="empty-title">服务暂时不可用，请稍后重试</view>
+      <view class="muted">后台数据读取失败，当前不展示本地样例数据。</view>
+    </view>
+
     <view wx:if="{{customerHero.visible !== false}}" class="customer-home-hero">
       <view class="customer-home-hero-copy">
         <view class="customer-home-hero-meta">
@@ -230,6 +235,11 @@
   </view>
 
   <view wx:if="{{isAyi}}" class="ayi-page">
+    <view wx:if="{{backendError}}" class="empty card">
+      <view class="empty-title">服务暂时不可用，请稍后重试</view>
+      <view class="muted">后台数据读取失败，当前不展示本地样例数据。</view>
+    </view>
+
     <view class="ayi-topbar">
       <view wx:if="{{ayiTop.visible !== false}}">
         <view class="ayi-brand-line">

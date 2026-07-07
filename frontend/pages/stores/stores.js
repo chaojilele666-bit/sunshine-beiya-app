@@ -1,5 +1,3 @@
-const { stores } = require('../../data/stores');
-
 const DEFAULT_CITY = '北京';
 const DEFAULT_ALL_DISTRICT = '全市区';
 const DEFAULT_DISTRICTS = [DEFAULT_ALL_DISTRICT, '东城区', '朝阳区', '海淀区', '丰台区', '通州区', '西城区'];
@@ -102,8 +100,8 @@ Page({
     canStayOnly: false,
     stayClass: '',
     stayMark: '',
-    stores,
-    visibleStores: stores,
+    stores: [],
+    visibleStores: [],
     emptyText: ''
   },
 
@@ -129,7 +127,7 @@ Page({
     const currentDistrict = filterConfig.districts.includes(this.data.activeDistrict)
       ? this.data.activeDistrict
       : DEFAULT_ALL_DISTRICT;
-    const nextStores = app.globalData.backendStores && app.globalData.backendStores.length ? app.globalData.backendStores : stores;
+    const nextStores = app.globalData.backendStores || [];
     console.info(`[stores-page] backendReady=${app.globalData.backendReady} source=${app.globalData.backendSource || 'unknown'} count=${nextStores.length}`);
     const visibleStoreSource = sortStores(nextStores.filter((store) => store && store.visible !== false));
     const storesWithImages = await Promise.all(visibleStoreSource.map(async (store) => {
@@ -208,9 +206,9 @@ Page({
 
     this.setData({
       visibleStores: this.data.storeFilterConfig.visible === false ? [] : list,
-      emptyText: this.data.storeFilterConfig.visible === false
+      emptyText: getApp().globalData.backendError || (this.data.storeFilterConfig.visible === false
         ? this.data.storeFilterConfig.emptyText
-        : (list.length ? '' : this.data.storeFilterConfig.emptyText)
+        : (list.length ? '' : this.data.storeFilterConfig.emptyText))
     });
   },
 

@@ -112,15 +112,23 @@ Page({
       serviceType,
       liveType: liveOptions[liveIndex]
     });
-    app.saveAyiProfile(profile);
+    wx.showLoading({ title: '提交中' });
+    app.saveAyiProfile(profile).then(() => {
+      wx.hideLoading();
+      wx.showToast({
+        title: '资料已保存',
+        icon: 'success'
+      });
 
-    wx.showToast({
-      title: '资料已保存',
-      icon: 'success'
+      setTimeout(() => {
+        wx.navigateBack();
+      }, 700);
+    }).catch(() => {
+      wx.hideLoading();
+      wx.showToast({
+        title: '服务暂时不可用，请稍后重试',
+        icon: 'none'
+      });
     });
-
-    setTimeout(() => {
-      wx.navigateBack();
-    }, 700);
   }
 });

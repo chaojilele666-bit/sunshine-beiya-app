@@ -1,6 +1,3 @@
-const { ayis } = require('../../data/ayis');
-const { sampleDemands } = require('../../data/demands');
-
 const SERVICE_ICON_BASE = '/assets/services/';
 const SERVICE_ICON_MAP = [
   { keywords: ['育儿嫂', '育儿', '婴儿'], icon: 'baby.svg' },
@@ -182,7 +179,7 @@ Page({
     profile: null,
     profileText: '请先完善个人资料和证件信息',
     applications: [],
-    todayJobs: sampleDemands.slice(0, 3),
+    todayJobs: [],
     customerShortcuts: [],
     customerHero: buildCustomerHero(null, DEFAULT_PUBLIC_PROFILE),
     companyDisplayName: DEFAULT_PUBLIC_PROFILE.companyName,
@@ -193,7 +190,7 @@ Page({
     ayiProfilePrompt: DEFAULT_AYI_PROFILE_PROMPT,
     ayiNavItems: defaultAyiNavItems([]),
     ayiRecommendedJobs: DEFAULT_AYI_RECOMMENDED_JOBS,
-    ayiJobSource: sampleDemands,
+    ayiJobSource: [],
     serviceHighlights: [],
     serviceItems: [],
     features: [
@@ -202,9 +199,10 @@ Page({
       '合同与服务保障'
     ],
     process: DEFAULT_PROCESS,
-    recommended: ayis.slice(0, 4),
+    recommended: [],
     companyBanners: [],
-    companyProfile: {}
+    companyProfile: {},
+    backendError: ''
   },
 
   bannerLoadSeq: 0,
@@ -227,8 +225,8 @@ Page({
   refreshPage(options) {
     const app = getApp();
     const profile = app.globalData.ayiProfile;
-    const backendAyis = app.globalData.ayis && app.globalData.ayis.length ? app.globalData.ayis : ayis;
-    const backendDemands = app.globalData.backendDemands && app.globalData.backendDemands.length ? app.globalData.backendDemands : sampleDemands;
+    const backendAyis = app.globalData.ayis || [];
+    const backendDemands = app.globalData.backendDemands || [];
     const localDemands = app.globalData.demands || [];
     const jobs = localDemands.length ? localDemands.concat(backendDemands) : backendDemands;
     const companyProfile = Object.assign({}, DEFAULT_PUBLIC_PROFILE, app.globalData.companyProfile || {});
@@ -245,7 +243,8 @@ Page({
       recommended: getFeaturedAyis(backendAyis),
       companyProfile,
       companyDisplayName: companyProfile.companyName || companyProfile.shortName || DEFAULT_PUBLIC_PROFILE.companyName,
-      companyDefaultCity: companyProfile.defaultCity || DEFAULT_PUBLIC_PROFILE.defaultCity
+      companyDefaultCity: companyProfile.defaultCity || DEFAULT_PUBLIC_PROFILE.defaultCity,
+      backendError: app.globalData.backendError || ''
     });
     this.refreshCompanyLogo(companyProfile.companyLogo);
     if (app.globalData.role === 'customer') {

@@ -1,6 +1,3 @@
-const { stores: localStores } = require('../../data/stores');
-const { ayis: localAyis } = require('../../data/ayis');
-
 function normalizeId(value) {
   return String(value || '');
 }
@@ -64,7 +61,8 @@ Page({
     store: null,
     featuredAyis: [],
     notFound: false,
-    loading: true
+    loading: true,
+    backendError: ''
   },
 
   onLoad(options) {
@@ -84,8 +82,7 @@ Page({
 
     await app.loadBackendData();
 
-    const backendStores = app.globalData.backendStores || [];
-    const storeList = backendStores.length ? backendStores : localStores;
+    const storeList = app.globalData.backendStores || [];
     const store = normalizeStore(storeList.find((item) => normalizeId(item.id) === id));
     const displayImage = store ? await app.resolveImageForDisplay(store.image, { storeId: store.id }) : '';
     const managerDisplayImage = store ? await app.resolveImageForDisplay(store.managerImage, { storeId: store.id }) : '';
@@ -97,7 +94,7 @@ Page({
       managerImageType: store.managerImage ? (String(store.managerImage).indexOf('http://localhost:5177/') === 0 ? 'http-local' : 'url') : 'empty',
       managerImageLength: String(store.managerImage || '').length
     }) : null;
-    const ayiSource = (app.globalData.ayis && app.globalData.ayis.length ? app.globalData.ayis : localAyis)
+    const ayiSource = (app.globalData.ayis || [])
       .map(normalizeAyi)
       .filter((item) => normalizeId(item.storeId) === id && certifiedAyi(item))
       .sort((a, b) => Number(Boolean(b.featured)) - Number(Boolean(a.featured)));
@@ -108,7 +105,8 @@ Page({
       store: displayStore,
       featuredAyis: ayiSource,
       notFound: !displayStore,
-      loading: false
+      loading: false,
+      backendError: app.globalData.backendError || ''
     });
   },
 

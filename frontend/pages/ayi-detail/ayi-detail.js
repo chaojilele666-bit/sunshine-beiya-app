@@ -1,15 +1,20 @@
-const { ayis } = require('../../data/ayis');
-
 Page({
   data: {
-    ayi: null
+    ayi: null,
+    notFound: false,
+    backendError: ''
   },
 
   onLoad(options) {
-    const allAyis = getApp().globalData.ayis && getApp().globalData.ayis.length ? getApp().globalData.ayis : ayis;
+    const app = getApp();
+    const allAyis = app.globalData.ayis || [];
     const id = options.id;
-    const ayi = allAyis.find((item) => String(item.id) === String(id) || String(item._id) === String(id)) || ayis[0];
-    this.setData({ ayi });
+    const ayi = allAyis.find((item) => String(item.id) === String(id) || String(item._id) === String(id)) || null;
+    this.setData({
+      ayi,
+      notFound: !ayi,
+      backendError: app.globalData.backendError || ''
+    });
   },
 
   goBooking() {

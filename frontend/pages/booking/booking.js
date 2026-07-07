@@ -1,8 +1,8 @@
-const { ayis } = require('../../data/ayis');
-
 Page({
   data: {
     ayi: null,
+    notFound: false,
+    backendError: '',
     form: {
       name: '',
       phone: '',
@@ -13,10 +13,15 @@ Page({
   },
 
   onLoad(options) {
-    const allAyis = getApp().globalData.ayis && getApp().globalData.ayis.length ? getApp().globalData.ayis : ayis;
+    const app = getApp();
+    const allAyis = app.globalData.ayis || [];
     const id = options.id;
-    const ayi = allAyis.find((item) => String(item.id) === String(id) || String(item._id) === String(id)) || ayis[0];
-    this.setData({ ayi });
+    const ayi = allAyis.find((item) => String(item.id) === String(id) || String(item._id) === String(id)) || null;
+    this.setData({
+      ayi,
+      notFound: !ayi,
+      backendError: app.globalData.backendError || ''
+    });
   },
 
   updateField(event) {
@@ -41,23 +46,31 @@ Page({
       return;
     }
 
+    wx.showLoading({ title: '提交中' });
     app.addAppointment(Object.assign({
       ayiId: ayi.id,
       ayiName: ayi.name,
       role: ayi.role || ayi.serviceType,
       serviceType: ayi.role || ayi.serviceType,
       customerName: form.name
-    }, form));
-
-    wx.showToast({
-      title: '预约已提交',
-      icon: 'success'
-    });
-
-    setTimeout(() => {
-      wx.switchTab({
-        url: '/pages/mine/mine'
+    }, form)).then(() => {
+      wx.hideLoading();
+      wx.showToast({
+        title: '预约已提交',
+        icon: 'success'
       });
-    }, 700);
+
+      setTimeout(() => {
+        wx.switchTab({
+          url: '/pages/mine/mine'
+        });
+      }, 700);
+    }).catch(() => {
+      wx.hideLoading();
+      wx.showToast({
+        title: '服务暂时不可用，请稍后重试',
+        icon: 'none'
+      });
+    });
   }
 });

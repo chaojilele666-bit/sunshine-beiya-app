@@ -48,13 +48,21 @@ Page({
       return;
     }
     const profile = app.globalData.ayiProfile || {};
+    wx.showLoading({ title: '提交中' });
     app.saveAyiProfile(Object.assign({}, profile, {
       certs: this.data.certs
-    }));
-
-    wx.showToast({
-      title: '证件已保存',
-      icon: 'success'
+    })).then(() => {
+      wx.hideLoading();
+      wx.showToast({
+        title: '证件已保存',
+        icon: 'success'
+      });
+    }).catch(() => {
+      wx.hideLoading();
+      wx.showToast({
+        title: '服务暂时不可用，请稍后重试',
+        icon: 'none'
+      });
     });
   }
 });

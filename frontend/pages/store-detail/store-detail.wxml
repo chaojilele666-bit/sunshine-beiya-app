@@ -4,6 +4,12 @@
     <view class="muted">请稍候...</view>
   </view>
 
+  <view wx:elif="{{backendError}}" class="empty card">
+    <view class="empty-title">服务暂时不可用，请稍后重试</view>
+    <view class="muted">后台数据读取失败，当前不展示本地样例数据。</view>
+    <button class="primary-button back-button" bindtap="goBack">返回门店</button>
+  </view>
+
   <view wx:elif="{{notFound}}" class="empty card">
     <view class="empty-title">没有找到门店</view>
     <view class="muted">门店可能已下架，返回门店列表再试试。</view>

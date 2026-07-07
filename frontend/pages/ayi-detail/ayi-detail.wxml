@@ -1,4 +1,18 @@
-<view class="page detail-page" wx:if="{{ayi}}">
+<view class="page detail-page" wx:if="{{backendError}}">
+  <view class="empty card">
+    <view class="empty-title">服务暂时不可用，请稍后重试</view>
+    <view class="muted">后台数据读取失败，当前不展示本地样例数据。</view>
+  </view>
+</view>
+
+<view class="page detail-page" wx:elif="{{notFound}}">
+  <view class="empty card">
+    <view class="empty-title">暂无数据</view>
+    <view class="muted">没有找到对应的阿姨资料。</view>
+  </view>
+</view>
+
+<view class="page detail-page" wx:elif="{{ayi}}">
   <view class="profile card">
     <view class="avatar" style="background: {{ayi.avatarColor}};">{{ayi.avatarText}}</view>
     <view class="profile-main">

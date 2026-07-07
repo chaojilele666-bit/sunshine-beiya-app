@@ -1,6 +1,3 @@
-const { ayis } = require('../../data/ayis');
-const { sampleDemands } = require('../../data/demands');
-
 const DEFAULT_CITY = '北京';
 const ALL_SERVICE_TYPE = '全部';
 const SERVICE_ICON_BASE = '/assets/services/';
@@ -197,12 +194,13 @@ Page({
     activeType: ALL_SERVICE_TYPE,
     filterItems: DEFAULT_FILTER_ITEMS,
     ayiListConfig: DEFAULT_AYI_LIST_CONFIG,
-    ayis,
-    visibleAyis: ayis,
+    ayis: [],
+    visibleAyis: [],
     noAyis: false,
     allDemands: [],
     demands: [],
-    noDemands: false
+    noDemands: false,
+    backendError: ''
   },
 
   onShow() {
@@ -217,8 +215,8 @@ Page({
     const app = getApp();
     const role = app.globalData.role;
     const applications = app.globalData.applications || [];
-    const sourceAyis = app.globalData.ayis && app.globalData.ayis.length ? app.globalData.ayis : ayis;
-    const backendDemands = app.globalData.backendDemands && app.globalData.backendDemands.length ? app.globalData.backendDemands : sampleDemands;
+    const sourceAyis = app.globalData.ayis || [];
+    const backendDemands = app.globalData.backendDemands || [];
     const modules = app.globalData.serviceModules || [];
     const visibleModules = sortedVisibleModules(modules);
     const serviceModules = visibleModules.filter((item) => item.moduleType === 'service');
@@ -289,7 +287,8 @@ Page({
       ayiServiceTopActions,
       ayiJobTop: buildAyiJobTop(ayiJobTopModule),
       ayiJobListConfig: buildAyiJobListConfig(ayiJobListModule),
-      ayiApplyConfig
+      ayiApplyConfig,
+      backendError: app.globalData.backendError || ''
     });
     this.refreshCustomerActionIcons(customerActions);
     this.refreshAyiTopActionIcons(ayiServiceTopActions);
@@ -403,7 +402,7 @@ Page({
   },
 
   filterAyis(type, source) {
-    const list = source || this.data.ayis || ayis;
+    const list = source || this.data.ayis || [];
     const keyword = this.data.query.trim();
     const visibleAyis = list.filter((item) => {
       const matchType = type === ALL_SERVICE_TYPE || item.role === type || item.serviceType === type;
@@ -503,6 +502,7 @@ Page({
       return;
     }
 
+    wx.showLoading({ title: '提交中' });
     app.addApplication({
       demandId: demand.id,
       serviceType: demand.serviceType,
@@ -512,12 +512,19 @@ Page({
       familyInfo: demand.familyInfo,
       ayiName: profile.name,
       ayiPhone: profile.phone
+    }).then(() => {
+      wx.hideLoading();
+      wx.showToast({
+        title: applyConfig.successMessage,
+        icon: 'success'
+      });
+      this.onShow();
+    }).catch(() => {
+      wx.hideLoading();
+      wx.showToast({
+        title: '服务暂时不可用，请稍后重试',
+        icon: 'none'
+      });
     });
-
-    wx.showToast({
-      title: applyConfig.successMessage,
-      icon: 'success'
-    });
-    this.onShow();
   }
 });

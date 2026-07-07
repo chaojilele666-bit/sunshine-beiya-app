@@ -6,6 +6,11 @@
   </view>
 
   <view wx:if="{{isCustomer}}">
+    <view wx:if="{{backendError}}" class="empty card">
+      <view class="empty-title">服务暂时不可用，请稍后重试</view>
+      <view class="muted">后台数据读取失败，当前不展示本地样例数据。</view>
+    </view>
+
     <view class="search-row">
       <view class="city">{{customerServiceCity}}</view>
       <view class="search-box">
@@ -86,6 +91,11 @@
   </view>
 
   <view wx:if="{{isAyi}}">
+    <view wx:if="{{backendError}}" class="empty card">
+      <view class="empty-title">服务暂时不可用，请稍后重试</view>
+      <view class="muted">后台数据读取失败，当前不展示本地样例数据。</view>
+    </view>
+
     <view wx:if="{{ayiJobTop.visible !== false}}" class="hero">
       <view class="eyebrow">{{ayiJobTop.eyebrow}}</view>
       <view class="title">{{ayiJobTop.title}}</view>

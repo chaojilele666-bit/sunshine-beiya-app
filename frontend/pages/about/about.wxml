@@ -1,4 +1,9 @@
 <view class="page about-page">
+  <view wx:if="{{backendError}}" class="section card block">
+    <view class="block-title">服务暂时不可用，请稍后重试</view>
+    <view class="muted">后台数据读取失败，当前不展示本地样例数据。</view>
+  </view>
+
   <view wx:if="{{introConfig.visible !== false}}" class="brand card">
     <image
       wx:if="{{displayLogo}}"

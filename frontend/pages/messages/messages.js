@@ -42,7 +42,8 @@ Page({
     total: 0,
     loading: false,
     empty: true,
-    needLogin: false
+    needLogin: false,
+    loadError: ''
   },
 
   onShow() {
@@ -71,7 +72,7 @@ Page({
     } else if (active) {
       filters.messageType = active;
     }
-    this.setData({ loading: true });
+    this.setData({ loading: true, loadError: '' });
     app.fetchNotifications(filters)
       .then((result) => {
         const messages = (result.items || []).map((item) => Object.assign({}, item, {
@@ -82,12 +83,19 @@ Page({
           messages,
           total: Number(result.total || messages.length),
           empty: messages.length === 0,
-          loading: false
+          loading: false,
+          loadError: ''
         });
         app.fetchUnreadCount();
       })
       .catch(() => {
-        this.setData({ messages: [], total: 0, empty: true, loading: false });
+        this.setData({
+          messages: [],
+          total: 0,
+          empty: false,
+          loading: false,
+          loadError: '服务暂时不可用，请稍后重试'
+        });
         wx.showToast({ title: '消息加载失败，请稍后重试', icon: 'none' });
       });
   },

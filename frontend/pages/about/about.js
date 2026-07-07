@@ -14,14 +14,6 @@ const DEFAULT_INTRO_CONFIG = {
   pageTitle: '公司介绍'
 };
 
-const DEFAULT_SERVICES = [
-  { id: 'default-housekeeping', title: '一般家政' },
-  { id: 'default-maternity', title: '月嫂服务' },
-  { id: 'default-baby', title: '育儿嫂/育婴服务' },
-  { id: 'default-elderly', title: '养老护理' },
-  { id: 'default-cleaning', title: '保洁助餐' }
-];
-
 const DEFAULT_PROCESS = [
   { id: 'default-flow-1', step: '1', title: '提交服务需求', description: '' },
   { id: 'default-flow-2', step: '2', title: '顾问沟通并匹配阿姨', description: '' },
@@ -82,11 +74,12 @@ Page({
     companyProfile: DEFAULT_COMPANY_PROFILE,
     displayLogo: '',
     introConfig: DEFAULT_INTRO_CONFIG,
-    services: DEFAULT_SERVICES,
+    services: [],
     stores: [],
-    process: DEFAULT_PROCESS,
-    guarantees: DEFAULT_GUARANTEES,
-    customerServiceConfig: DEFAULT_CUSTOMER_SERVICE
+    process: [],
+    guarantees: [],
+    customerServiceConfig: DEFAULT_CUSTOMER_SERVICE,
+    backendError: ''
   },
 
   onShow() {
@@ -111,24 +104,25 @@ Page({
       && item.targetType === 'about_service_guarantee');
     const customerServiceModule = modules.find((item) => item && item.moduleType === 'highlight'
       && item.targetType === 'about_customer_service');
-    const sourceStores = app.globalData.backendStores && app.globalData.backendStores.length ? app.globalData.backendStores : [];
+    const sourceStores = app.globalData.backendStores || [];
 
     this.setData({
       companyProfile: profile,
       displayLogo: '',
       introConfig: buildIntroConfig(introModule),
-      services: serviceModules.length ? serviceModules.map((item) => ({
+      services: serviceModules.map((item) => ({
         id: item.id,
         title: item.title
-      })) : DEFAULT_SERVICES,
+      })),
       stores: sourceStores.filter((store) => store && store.visible !== false),
-      process: buildStepModules(flowModules, DEFAULT_PROCESS),
-      guarantees: guaranteeModules.length ? guaranteeModules.map((item) => ({
+      process: buildStepModules(flowModules, []),
+      guarantees: guaranteeModules.map((item) => ({
         id: item.id,
         title: item.title,
         description: item.description || ''
-      })) : DEFAULT_GUARANTEES,
-      customerServiceConfig: buildCustomerServiceConfig(customerServiceModule)
+      })),
+      customerServiceConfig: buildCustomerServiceConfig(customerServiceModule),
+      backendError: app.globalData.backendError || ''
     });
     this.refreshLogo(profile.companyLogo);
   },

@@ -1,7 +1,3 @@
-const { ayis: localAyis } = require('./data/ayis');
-const { sampleDemands } = require('./data/demands');
-const { stores: localStores } = require('./data/stores');
-
 const BACKEND_BASE_URL = 'http://localhost:5177';
 const CUSTOMER_DEMAND_ACCESS_KEY = 'customerDemandAccessList';
 const MINIPROGRAM_AUTH_TOKEN_KEY = 'miniprogramAuthToken';
@@ -215,7 +211,7 @@ function normalizeCompanyProfile(profile) {
 
 function showBackendSyncFailedToast() {
   wx.showToast({
-    title: '已保存到本地，后台同步失败，请确认后台是否启动',
+    title: '服务暂时不可用，请稍后重试',
     icon: 'none',
     duration: 3000
   });
@@ -226,8 +222,9 @@ App({
     city: '北京',
     backendBaseUrl: BACKEND_BASE_URL,
     backendReady: false,
+    backendError: '',
     role: '',
-    ayis: localAyis,
+    ayis: [],
     backendAyis: [],
     backendDemands: [],
     backendStores: [],
@@ -616,23 +613,26 @@ App({
         this.globalData.backendAyis = backendAyis;
         this.globalData.backendDemands = backendDemands;
         this.globalData.backendStores = backendStores;
-        this.globalData.ayis = backendAyis.length ? backendAyis : localAyis;
+        this.globalData.ayis = backendAyis;
         this.globalData.serviceModules = normalizeServiceModules(data.serviceModules);
         this.globalData.banners = data.banners || [];
         this.globalData.companyProfile = normalizeCompanyProfile(data.companyProfile);
+        this.globalData.backendError = '';
         logStoreSource(this.globalData.backendSource, backendStores);
         return data;
       })
       .catch((error) => {
         this.globalData.backendReady = false;
-        this.globalData.backendSource = 'local-fallback';
-        this.globalData.ayis = localAyis;
-        this.globalData.backendDemands = sampleDemands;
-        this.globalData.backendStores = localStores.map(normalizeStore);
+        this.globalData.backendSource = 'backend-error';
+        this.globalData.backendError = '服务暂时不可用，请稍后重试';
+        this.globalData.ayis = [];
+        this.globalData.backendDemands = [];
+        this.globalData.backendStores = [];
         this.globalData.serviceModules = normalizeServiceModules([]);
+        this.globalData.banners = [];
         this.globalData.companyProfile = normalizeCompanyProfile(null);
-        console.warn(`[stores] source=local-fallback error=${error && error.message ? error.message : 'unknown'}`);
-        logStoreSource('local-fallback', this.globalData.backendStores);
+        console.warn(`[stores] source=backend-error error=${error && error.message ? error.message : 'unknown'}`);
+        logStoreSource('backend-error', this.globalData.backendStores);
         return null;
       });
   },
@@ -652,8 +652,16 @@ App({
       status: '待联系',
       createdAt: new Date().toLocaleString()
     }, appointment);
-    this.globalData.appointments = [record, ...this.globalData.appointments];
-    this.requestBackend('appointments', 'POST', record).catch(showBackendSyncFailedToast);
+    return this.requestBackend('appointments', 'POST', record)
+      .then((saved) => {
+        const nextRecord = saved && saved.id ? saved : record;
+        this.globalData.appointments = [nextRecord, ...this.globalData.appointments];
+        return nextRecord;
+      })
+      .catch((error) => {
+        showBackendSyncFailedToast();
+        throw error;
+      });
   },
 
   addDemand(demand) {
@@ -689,16 +697,22 @@ App({
     if (!this.isLoggedIn()) {
       return this.requireLogin();
     }
-    this.globalData.ayiProfile = Object.assign({
+    const record = Object.assign({
       status: '待审核',
       updatedAt: new Date().toLocaleString()
     }, profile);
-    this.requestBackend('ayis', 'POST', Object.assign({
+    return this.requestBackend('ayis', 'POST', Object.assign({
       image: '',
       idCardImage: '',
       healthCertImage: '',
       skillCertImage: ''
-    }, this.globalData.ayiProfile)).catch(showBackendSyncFailedToast);
+    }, record)).then((saved) => {
+      this.globalData.ayiProfile = Object.assign({}, record, saved || {});
+      return this.globalData.ayiProfile;
+    }).catch((error) => {
+      showBackendSyncFailedToast();
+      throw error;
+    });
   },
 
   addApplication(application) {
@@ -710,8 +724,16 @@ App({
       status: '已申请',
       createdAt: new Date().toLocaleString()
     }, application);
-    this.globalData.applications = [record, ...this.globalData.applications];
     this.requestNotificationSubscriptions(['application_result']);
-    this.requestBackend('applications', 'POST', record).catch(showBackendSyncFailedToast);
+    return this.requestBackend('applications', 'POST', record)
+      .then((saved) => {
+        const nextRecord = saved && saved.id ? saved : record;
+        this.globalData.applications = [nextRecord, ...this.globalData.applications];
+        return nextRecord;
+      })
+      .catch((error) => {
+        showBackendSyncFailedToast();
+        throw error;
+      });
   }
 });
